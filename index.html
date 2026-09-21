@@ -191,8 +191,8 @@
   <div class="card">
     <h2>How it works</h2>
     <p class="tiny">
-      Drag to scratch. Every layer hides <b>one seam</b> &mdash; expose it and the layer
-      breaks regardless of what's left. Every 10th layer is <b>reinforced</b>: trace the hidden
+      Drag to scratch. Every layer hides <b>one seam</b> &mdash; expose it, then tap the star
+      to break the layer regardless of what's left. Every 10th layer is <b>reinforced</b>: trace the hidden
       channel end to end instead.<br><br>
       Leftover crust you never touched <b>carries over</b> as extra hardness on the next layer (capped at 2&times;).
       <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
@@ -1088,6 +1088,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.bossProgress = 0;
     run.warned = false;
     run.revealedCircuits = {};
+    run.seamRevealed = false;
     input.hasLast = false;
     // a tool that can no longer be equipped at this depth falls back to the hand
     var t = DIG.TOOL_BY_ID[run.tool];
@@ -1274,10 +1275,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (integrityAt(it.x, it.y) <= reveal) collect(it);
     }
 
-    // the seam
-    if (!L.isBoss) {
+    // the seam: exposing it only reveals the star. Advancing needs a tap on it.
+    if (!L.isBoss && !run.seamRevealed) {
       var rv = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
-      if (integrityAt(L.target.x, L.target.y) <= rv) { clearLayer('seam'); return; }
+      if (integrityAt(L.target.x, L.target.y) <= rv) { revealSeam(); return; }
     }
 
     // fragile collapse
@@ -1351,6 +1352,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       loadLayer(run.depth);
       run.collapsing = 0;
     }, 850);
+  }
+
+  function revealSeam() {
+    run.seamRevealed = true;
+    var p = toPx(run.layer.target.x, run.layer.target.y);
+    burst(p, '#ffffff', 16, 2);
+    buzz(16);
+    banner('SEAM EXPOSED · TAP IT');
   }
 
   function clearLayer(reason) {
@@ -1692,6 +1701,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     ctx.globalAlpha = 1;
 
+    // tap ring: makes the revealed star obvious and tappable through the crust
+    if (phase === 'dig' && run.seamRevealed) {
+      var stp = toPx(run.layer.target.x, run.layer.target.y);
+      var pulse = 0.5 + 0.5 * Math.sin(performance.now() / 220);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 + pulse * 0.4) + ')';
+      ctx.lineWidth = view.cell * 0.3;
+      ctx.beginPath();
+      ctx.arc(stp.x, stp.y, view.cell * (2.3 + pulse * 0.7), 0, 6.2832);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (flash) {
       ctx.fillStyle = 'rgba(' + flash.color + ',' + (0.8 * (1 - flash.t / 0.45)) + ')';
       ctx.fillRect(0, 0, view.w, view.h);
@@ -1826,8 +1848,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   cv.addEventListener('pointerdown', function (ev) {
     if (phase !== 'dig' || wheelOpen) return;
     ev.preventDefault();
-    cv.setPointerCapture(ev.pointerId);
     var p = local(ev);
+    if (run.seamRevealed) {
+      var sp = toPx(run.layer.target.x, run.layer.target.y);
+      if (DIG.dist(p.x, p.y, sp.x, sp.y) <= view.cell * 3.2) { clearLayer('seam'); return; }
+    }
+    cv.setPointerCapture(ev.pointerId);
     input.down = true; input.x = p.x; input.y = p.y;
     input.lx = p.x; input.ly = p.y; input.hasLast = true;
   });

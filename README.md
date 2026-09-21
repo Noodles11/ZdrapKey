@@ -15,8 +15,9 @@ stored in `localStorage`; nothing leaves the device.
 
 You descend through numbered layers with no upper bound. Each layer is one
 surface of a material. Drag to scratch it away in a soft-edged radius around
-your finger. Every layer hides **one seam**; expose it and the layer breaks
-regardless of how much crust is left. Every 10th layer is **reinforced**: there
+your finger. Every layer hides **one seam**; expose it to reveal a star, then
+tap the star to break the layer, regardless of how much crust is left. Every
+10th layer is **reinforced**: there
 is no seam to find, only a hidden channel to trace end to end without straying
 past tolerance.
 
