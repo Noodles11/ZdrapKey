@@ -194,8 +194,8 @@
       Drag to scratch. Every layer hides <b>one seam</b> &mdash; expose it, then tap the star
       to break the layer regardless of what's left. Every 10th layer is <b>reinforced</b>: trace the hidden
       channel end to end instead.<br><br>
-      Leftover crust you never touched <b>carries over</b> as extra hardness on the next layer (capped at 2&times;).
-      <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
+      Leftover crust you never touched is forgotten once you move on &mdash; nothing carries over unless you
+      scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
       currency. <b>Bail</b> between layers to keep everything.
     </p>
   </div>
@@ -1135,6 +1135,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         }
       }
     }
+    // the surface name, imprinted into the crust itself so it scratches away
+    // with the rest of the layer instead of sitting on top of it
+    var label = m.name.toUpperCase();
+    matCtx.save();
+    matCtx.textAlign = 'center';
+    matCtx.textBaseline = 'middle';
+    var fs = Math.round(w * 0.1);
+    matCtx.font = '700 ' + fs + 'px ui-monospace,Menlo,monospace';
+    var maxW = w * 0.86, tw = matCtx.measureText(label).width;
+    if (tw > maxW) { fs = Math.round(fs * maxW / tw); matCtx.font = '700 ' + fs + 'px ui-monospace,Menlo,monospace'; }
+    matCtx.fillStyle = 'rgba(255,255,255,.14)';
+    matCtx.fillText(label, w / 2 - 1, h / 2 - 2);
+    matCtx.fillStyle = 'rgba(0,0,0,.32)';
+    matCtx.fillText(label, w / 2 + 1, h / 2 + 2);
+    matCtx.restore();
+
     // edge shading
     var g = matCtx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.72);
     g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -1366,14 +1382,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if (phase !== 'dig') return;
     phase = 'interlude';
     var L = run.layer;
-    var leftover = Math.max(0, 1 - clearedFraction());
-    run.carry = Math.min(L.baseHardness, L.baseHardness * C.CARRY_FACTOR * leftover);
+    // crust left unscratched no longer carries into the next layer
+    run.carry = 0;
     run.cleared++;
     profile.best = Math.max(profile.best, L.depth); save();
     var p = toPx(L.target.x, L.target.y);
     burst(p, '#ffffff', 34, 3);
     buzz(26);
-    banner(reason === 'boss' ? 'CHANNEL TRACED' : 'SEAM FOUND · ' + Math.round(leftover * 100) + '% CARRIED');
+    banner(reason === 'boss' ? 'CHANNEL TRACED' : 'SEAM FOUND');
     $('bailBtn').disabled = false;
     run.interT = 0;
   }

@@ -21,9 +21,11 @@ tap the star to break the layer, regardless of how much crust is left. Every
 is no seam to find, only a hidden channel to trace end to end without straying
 past tolerance.
 
-Crust you never touched is not free. Leftover resistance carries into the next
-layer as extra hardness, capped so it can never more than double that layer's
-base difficulty — so rushing to the seam borrows trouble from the layer below.
+Crust you never touched is forgotten the moment you move on — nothing carries
+into the next layer unless you scratch it away completely first.
+
+Each layer's surface material is spelled out in the crust itself; the name
+scratches away right along with the rest of the layer.
 
 A run ends in exactly one of three ways:
 
