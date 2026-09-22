@@ -121,8 +121,16 @@ inside the loop reacts exactly as if you'd uncovered it with any other tool.
   nearby un-armed mine's aura straight through solid crust. Defusing 10 mines
   across any number of runs permanently unlocks **Second Wind** in the shop —
   a one-time death-evading guard you can buy fresh for each run.
-- **Live circuits** end the run if you scratch across one where the crust is
-  already thin. The Insulated Probe shorts them out instead, and pays for it.
+- **Live circuits** draw straight through the crust from the moment a layer
+  loads — no digging needed to see where they run. Each wire cycles on its
+  own random timer: energized (bright, dashed, dangerous) for 3-5 seconds,
+  then dormant (dim, harmless) for 1.5-3. Scratching across it while thin and
+  energized ends the run; while dormant, it's just a wire. The Insulated
+  Probe still shorts one out for a bounty, but only while it's energized.
+  Every layer with a circuit also buries one **off-switch**, hidden under the
+  crust like ordinary loot. Dig it up and hold a thumb exactly on it (no
+  offset) for 3 seconds to permanently kill every live circuit on the layer —
+  sometimes the only way to safely reach a seam or loot a wire was guarding.
 
 Density and lethality rise with depth. The vault carries none.
 
@@ -179,7 +187,7 @@ and checks:
 The palette is measured, not asserted by eye — the material colours in
 `index.html` were chosen by search against those constraints. Buried things are
 also shape-coded (spiked disc, dashed line, ringed disc, diamond, hexagon,
-starburst), so colour is never the only channel.
+starburst, crossed square), so colour is never the only channel.
 
 `index.html?selftest` runs the same checks in the page. `index.html?debug`
 exposes a small inspection hook used by the browser tests.
