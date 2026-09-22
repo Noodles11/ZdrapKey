@@ -81,17 +81,27 @@ material it's cut from. Cardboard, Topsoil, Sand and Clay are soft enough that
 whatever coins, fragments or tools were inside the loop are collected as
 normal. Every other material is too hard to cut cleanly by hand: the interior
 still clears, but any loot inside is lost, and a mine or live circuit caught
-inside the loop goes off exactly as if you'd uncovered it with any other tool.
+inside the loop reacts exactly as if you'd uncovered it with any other tool.
 
 ## Hazards
 
-- **Mines** end the run the moment their core is uncovered. The Core Drill sets
-  them off at roughly twice the remaining cover. Every mine sits under a red
-  warning aura, buried at the same depth as the mine itself and wider than its
-  icon, so scratching anywhere nearby shows a red hint before you reach the
-  core. The aura shrinks the deeper you go, giving far less notice late in a
-  descent. The Insulated Probe periodically pings, briefly showing every
-  nearby mine's aura straight through solid crust.
+- **Mines** don't go off the instant their core is uncovered anymore - they
+  arm a 5-second fuse instead. The Core Drill arms one at roughly twice the
+  remaining cover. An armed mine draws straight through solid crust: a
+  pulsing core and a red ring that shrinks toward it as the fuse burns down,
+  the pulse speeding up as it gets close. Hold a thumb exactly over an armed
+  mine (no thumb offset here - press precisely on it) and a green ring fills
+  in as it defuses, taking 3 uninterrupted seconds; lift your finger before
+  it completes and the ring resets to empty, fuse still burning, so you may
+  not make it back in time. A defused mine settles for good. One that isn't
+  detonates: the screen shakes, a rough-edged crater is blasted into the
+  crust around it, any nearby loot is thrown outward, and the death screen
+  only appears once that settles. Every un-armed mine also sits under a red
+  warning aura, buried at the same depth as the mine itself and wider than
+  its icon, so scratching anywhere nearby shows a red hint before you reach
+  the core; the aura shrinks the deeper you go, giving far less notice late
+  in a descent. The Insulated Probe periodically pings, briefly showing every
+  nearby un-armed mine's aura straight through solid crust.
 - **Live circuits** end the run if you scratch across one where the crust is
   already thin. The Insulated Probe shorts them out instead, and pays for it.
 

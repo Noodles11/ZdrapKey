@@ -199,6 +199,10 @@
       scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
       currency. <b>Bail</b> between layers to keep everything. Every mine hides under a red warning aura wider
       than the mine itself, so you'll see red before you reach the core &mdash; it shrinks the deeper you go.<br><br>
+      Uncovering a <b>mine</b> arms a 5-second fuse instead of killing you outright &mdash; it pulses faster as
+      time runs out. Hold your thumb exactly on it (no offset here) for 3 uninterrupted seconds to defuse it;
+      lift early and the progress resets while the fuse keeps burning. Run out of time and it blasts a crater
+      into the crust and flings any nearby loot outward.<br><br>
       Dirt layers sometimes have small bugs wandering across them. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
       <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.<br><br>
@@ -1088,7 +1092,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   /* ---------------------------------------------------------------- state */
   var run = null, fx = [], shake = 0, flash = null;
-  var input = { down: false, x: 0, y: 0, lx: 0, ly: 0, hasLast: false };
+  var input = { down: false, x: 0, y: 0, lx: 0, ly: 0, hasLast: false, rawX: 0, rawY: 0 };
   var wheelOpen = false;
   var phase = 'idle'; // idle | dig | interlude | ending
 
@@ -1199,6 +1203,62 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (run.detectTimer >= DETECT_INTERVAL) { run.detectTimer = 0; run.detectPulse = 1; }
     }
     if (run.detectPulse > 0) run.detectPulse = Math.max(0, run.detectPulse - dt / DETECT_FADE);
+  }
+
+  /* ------------------------------------------------------------ mine fuses */
+  // uncovering a mine no longer kills instantly: it arms a fuse the player
+  // can defuse by holding a thumb over it before time runs out
+  var MINE_FUSE_TIME = 5;      // seconds from arming to detonation
+  var MINE_DEFUSE_TIME = 3;    // seconds of steady, uninterrupted hold to defuse
+  var MINE_DEFUSE_RADIUS = 3.0; // cells - how close the raw touch must stay
+  var MINE_CRATER_RADIUS = 6.5; // cells - blast crater carved on detonation
+
+  function armMine(hz) {
+    if (hz.fuseStarted || hz.dead || hz.settled) return;
+    hz.fuseStarted = true;
+    hz.fuseT = 0;
+    hz.defuseT = 0;
+    banner('MINE ARMED · HOLD TO DEFUSE');
+    buzz([10, 30, 10]);
+  }
+
+  function settleMine(hz) {
+    hz.settled = true;
+    hz.fuseStarted = false;
+    banner('MINE DEFUSED');
+    buzz([16, 40]);
+    burst(toPx(hz.x, hz.y), '#9fb0c0', 20, 3);
+  }
+
+  function stepMines(dt) {
+    var L = run.layer;
+    for (var i = 0; i < L.hazards.length; i++) {
+      var hz = L.hazards[i];
+      if (hz.kind !== 'mine' || !hz.fuseStarted || hz.dead || hz.settled) continue;
+      hz.fuseT += dt;
+      if (hz.fuseT >= MINE_FUSE_TIME) { detonate(hz); return; }
+    }
+  }
+
+  // the one armed mine (if any) whose raw touch point is close enough to defuse
+  function findArmedMineAtRaw() {
+    var L = run.layer;
+    for (var i = 0; i < L.hazards.length; i++) {
+      var hz = L.hazards[i];
+      if (hz.kind !== 'mine' || !hz.fuseStarted || hz.dead || hz.settled) continue;
+      var p = toPx(hz.x, hz.y);
+      if (DIG.dist(input.rawX, input.rawY, p.x, p.y) <= view.cell * MINE_DEFUSE_RADIUS) return hz;
+    }
+    return null;
+  }
+  // any other armed mine's defuse progress is thrown away the moment the
+  // thumb isn't steadily holding it
+  function resetOtherDefuseTimers(active) {
+    var L = run.layer;
+    for (var i = 0; i < L.hazards.length; i++) {
+      var hz = L.hazards[i];
+      if (hz.kind === 'mine' && hz !== active && hz.defuseT) hz.defuseT = 0;
+    }
   }
 
   /* ------------------------------------------------------------ material */
@@ -1452,10 +1512,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var cp = toPx((minX + maxX) / 2, (minY + maxY) / 2);
     burst(cp, safe ? '#ffffff' : '#8a8f96', 26, 3);
 
-    // a hazard inside the cut fires exactly as if you'd uncovered it by hand
+    // a mine inside the cut arms exactly as if you'd uncovered it by hand
     for (i = 0; i < L.hazards.length; i++) {
       var hz = L.hazards[i];
-      if (hz.kind === 'mine' && !hz.dead && pointInPoly(hz.x, hz.y, poly)) { detonate(hz); return; }
+      if (hz.kind === 'mine' && !hz.dead && !hz.settled && !hz.fuseStarted && pointInPoly(hz.x, hz.y, poly)) armMine(hz);
     }
     for (i = 0; i < L.hazards.length; i++) {
       var cz = L.hazards[i];
@@ -1490,12 +1550,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if (phase !== 'dig') return;
     var L = run.layer, i;
 
-    // mines
+    // mines: uncovering one only arms its fuse now
     for (i = 0; i < L.hazards.length; i++) {
       var hz = L.hazards[i];
-      if (hz.kind !== 'mine' || hz.dead) continue;
+      if (hz.kind !== 'mine' || hz.dead || hz.settled || hz.fuseStarted) continue;
       var trip = run.tool === 'drill' ? C.MINE_TRIGGER_LOUD : C.MINE_TRIGGER;
-      if (integrityAt(hz.x, hz.y) <= trip) { detonate(hz); return; }
+      if (integrityAt(hz.x, hz.y) <= trip) armMine(hz);
     }
 
     // live circuits: crossing the corridor while the crust above is thin
@@ -1570,14 +1630,69 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   /* ------------------------------------------------------------ outcomes */
+  // a rough, jagged blast crater instead of a clean circle - the mask never
+  // grows back, so this is only ever worth doing as the run ends
+  function carveCrater(cx, cy, baseR) {
+    var rays = 14, radii = [], i;
+    for (i = 0; i < rays; i++) radii.push(baseR * (0.65 + Math.random() * 0.6));
+    var reach = baseR * 1.3;
+    var x0 = Math.max(0, Math.floor(cx - reach)), x1 = Math.min(GW - 1, Math.ceil(cx + reach));
+    var y0 = Math.max(0, Math.floor(cy - reach)), y1 = Math.min(GH - 1, Math.ceil(cy + reach));
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        var dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        var t = ((Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI)) * rays;
+        var i0 = Math.floor(t) % rays, i1 = (i0 + 1) % rays, f = t - Math.floor(t);
+        var rEdge = radii[i0] * (1 - f) + radii[i1] * f;
+        if (d > rEdge) continue;
+        var idxc = y * GW + x;
+        run.removed += run.integrity[idxc];
+        run.integrity[idxc] = 0;
+      }
+    }
+  }
+
+  // nearby loot flies outward from the blast; a light friction brings it to
+  // rest, purely for show since the run is already over
+  function flingItems(cx, cy, radius) {
+    run.layer.items.forEach(function (it) {
+      if (it.taken) return;
+      var d = DIG.dist(cx, cy, it.x, it.y);
+      if (d > radius) return;
+      var ang = d > 0.01 ? Math.atan2(it.y - cy, it.x - cx) : Math.random() * 6.2832;
+      var speed = 9 + Math.random() * 7;
+      it.vx = Math.cos(ang) * speed;
+      it.vy = Math.sin(ang) * speed;
+    });
+  }
+
+  function stepExplosion(dt) {
+    if (!run || !run.explosion || !run.layer) return;
+    run.explosion.t += dt;
+    var decay = Math.max(0, 1 - dt * 3);
+    run.layer.items.forEach(function (it) {
+      if (it.vx == null) return;
+      it.x += it.vx * dt; it.y += it.vy * dt;
+      it.vx *= decay; it.vy *= decay;
+    });
+  }
+
   function detonate(hz) {
+    if (hz.dead) return;
     hz.dead = true;
+    hz.fuseStarted = false;
+    var L = run.layer;
     var p = toPx(hz.x, hz.y);
-    burst(p, DIG.SIGNAL_COLORS.mine, 70, 4.5);
+    carveCrater(hz.x, hz.y, MINE_CRATER_RADIUS);
+    flingItems(hz.x, hz.y, MINE_CRATER_RADIUS * 2.2);
+    run.explosion = { t: 0 };
+    burst(p, DIG.SIGNAL_COLORS.mine, 90, 5);
+    burst(p, '#ffffff', 30, 3);
     flash = { t: 0, color: '255,120,20' };
-    shake = 26;
-    buzz([40, 60, 120]);
-    endRun('death', 'A charge went off under ' + run.layer.material.name.toLowerCase() + '.');
+    shake = 30;
+    buzz([40, 60, 120, 40]);
+    endRun('death', 'A charge went off under ' + L.material.name.toLowerCase() + '.');
   }
 
   function electrocute(cz, cur) {
@@ -1678,7 +1793,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     profile.best = Math.max(profile.best, run.depth);
     save();
 
-    setTimeout(function () { showEnd(kind, msg, banked, keptTools, newSets); }, kind === 'death' ? 700 : 340);
+    // a mine's blast sequence (shake, crater, flung loot) needs longer to read
+    // before the death screen covers it
+    var delay = run.explosion ? 1700 : (kind === 'death' ? 700 : 340);
+    setTimeout(function () { showEnd(kind, msg, banked, keptTools, newSets); }, delay);
   }
 
   /* ------------------------------------------------------------ boss trace */
@@ -1766,6 +1884,51 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     c.restore();
   }
 
+  // an armed mine draws unmasked, straight through solid crust: a pulsing
+  // core that speeds up as the fuse burns down, a fuse ring that shrinks
+  // toward the core, and (while a thumb holds it) a filling defuse ring
+  function drawArmedMine(c, hz) {
+    var p = toPx(hz.x, hz.y), cell = view.cell;
+    var frac = Math.max(0, 1 - hz.fuseT / MINE_FUSE_TIME); // 1 -> 0 as it burns down
+    var pulseHz = 1 + 2 * Math.pow(1 - frac, 2);
+    var pulse = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * pulseHz * 6.2832);
+
+    c.save();
+    c.translate(p.x, p.y);
+
+    c.fillStyle = 'rgba(213,94,0,' + (0.35 + pulse * 0.35) + ')';
+    c.beginPath(); c.arc(0, 0, cell * (2.6 + pulse * 0.6), 0, 6.2832); c.fill();
+
+    c.strokeStyle = DIG.SIGNAL_COLORS.mine; c.fillStyle = DIG.SIGNAL_COLORS.mine;
+    c.lineWidth = cell * 0.3;
+    for (var s = 0; s < 8; s++) {
+      var a = s * Math.PI / 4, tip = cell * (2.0 + pulse * 0.3);
+      c.beginPath();
+      c.moveTo(Math.cos(a) * cell * 1.1, Math.sin(a) * cell * 1.1);
+      c.lineTo(Math.cos(a) * tip, Math.sin(a) * tip);
+      c.stroke();
+    }
+    c.beginPath(); c.arc(0, 0, cell * 1.25, 0, 6.2832); c.fill();
+    c.fillStyle = '#1a0b03';
+    c.beginPath(); c.arc(0, 0, cell * 0.5, 0, 6.2832); c.fill();
+
+    // fuse ring: shrinks toward the core as the explosion approaches
+    c.strokeStyle = 'rgba(213,94,0,.9)';
+    c.lineWidth = cell * 0.35;
+    c.beginPath(); c.arc(0, 0, cell * (2.4 + frac * 5.0), 0, 6.2832); c.stroke();
+
+    // defuse ring: fills in while a thumb holds steady over the mine
+    if (hz.defuseT > 0) {
+      var df = Math.min(1, hz.defuseT / MINE_DEFUSE_TIME);
+      c.strokeStyle = '#3BE08C';
+      c.lineWidth = cell * 0.45;
+      c.beginPath();
+      c.arc(0, 0, cell * 1.9, -Math.PI / 2, -Math.PI / 2 + df * 6.2832);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   function drawBuried() {
     var L = run.layer, i;
 
@@ -1804,21 +1967,25 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     // mines: a red warning aura, buried under the crust like the mine itself,
     // sized wider than the mine's own icon so an early pass at the crust
-    // above it shows red before the player is anywhere near the core
+    // above it shows red before the player is anywhere near the core. Once
+    // armed the mine gets its own unmasked overlay instead (see render()).
     for (i = 0; i < L.hazards.length; i++) {
       var mz = L.hazards[i];
-      if (mz.kind !== 'mine' || mz.dead) continue;
+      if (mz.kind !== 'mine' || mz.dead || mz.settled || mz.fuseStarted) continue;
       drawMineAura(ctx, mz, L.depth, 1);
     }
 
-    // mines: concentric ring + spikes
+    // mines: concentric ring + spikes. Armed mines draw via the unmasked
+    // overlay in render() instead, so they read clearly the instant they
+    // arm regardless of how much crust is still sitting over them.
     for (i = 0; i < L.hazards.length; i++) {
       var mz = L.hazards[i];
-      if (mz.kind !== 'mine') continue;
+      if (mz.kind !== 'mine' || mz.fuseStarted) continue;
       var p = toPx(mz.x, mz.y);
+      var mc = mz.settled ? '#6b6b6b' : DIG.SIGNAL_COLORS.mine;
       ctx.save();
       ctx.translate(p.x, p.y);
-      ctx.strokeStyle = DIG.SIGNAL_COLORS.mine; ctx.fillStyle = DIG.SIGNAL_COLORS.mine;
+      ctx.strokeStyle = mc; ctx.fillStyle = mc;
       ctx.lineWidth = cell * 0.3;
       for (var s = 0; s < 8; s++) {
         var a = s * Math.PI / 4;
@@ -2015,7 +2182,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var L3 = run.layer;
       for (var mi = 0; mi < L3.hazards.length; mi++) {
         var mz2 = L3.hazards[mi];
-        if (mz2.kind === 'mine' && !mz2.dead) drawMineAura(ctx, mz2, L3.depth, run.detectPulse);
+        if (mz2.kind === 'mine' && !mz2.dead && !mz2.settled && !mz2.fuseStarted) {
+          drawMineAura(ctx, mz2, L3.depth, run.detectPulse);
+        }
+      }
+    }
+
+    // an armed mine is unmissable: pulsing core, shrinking fuse ring, and a
+    // defuse ring that fills while it's held
+    var L5 = run.layer;
+    for (var mi2 = 0; mi2 < L5.hazards.length; mi2++) {
+      var mzArmed = L5.hazards[mi2];
+      if (mzArmed.kind === 'mine' && mzArmed.fuseStarted && !mzArmed.dead && !mzArmed.settled) {
+        drawArmedMine(ctx, mzArmed);
       }
     }
 
@@ -2069,13 +2248,24 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     last = now;
 
     if (run && phase !== 'idle') {
+      // a mine's fuse burns whether or not a thumb is on the glass
+      if (phase === 'dig' && !wheelOpen) stepMines(dt);
       if (phase === 'dig' && input.down && !wheelOpen && !run.collapsing) {
-        if (!input.hasLast) { input.lx = input.x; input.ly = input.y; input.hasLast = true; }
-        run.time += dt;
-        applyStroke(dt);
-        if (run.layer.isBoss) bossUpdate(toCell(input.x, input.y), dt);
-        input.lx = input.x; input.ly = input.y;
-        updateHud();
+        var armedMine = findArmedMineAtRaw();
+        if (armedMine) {
+          resetOtherDefuseTimers(armedMine);
+          armedMine.defuseT = (armedMine.defuseT || 0) + dt;
+          if (armedMine.defuseT >= MINE_DEFUSE_TIME) settleMine(armedMine);
+          input.hasLast = false;
+        } else {
+          resetOtherDefuseTimers(null);
+          if (!input.hasLast) { input.lx = input.x; input.ly = input.y; input.hasLast = true; }
+          run.time += dt;
+          applyStroke(dt);
+          if (run.layer.isBoss) bossUpdate(toCell(input.x, input.y), dt);
+          input.lx = input.x; input.ly = input.y;
+          updateHud();
+        }
       }
       if (phase === 'interlude') {
         run.interT += dt;
@@ -2084,6 +2274,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (run.collapsing) run.collapsing = Math.min(1, run.collapsing + dt);
       if (phase === 'dig' && run.bugs && run.bugs.length && !wheelOpen) stepBugs(dt);
       if (phase === 'dig' && !wheelOpen) stepDetection(dt);
+      stepExplosion(dt);
       stepFx(dt);
       render();
     }
@@ -2214,18 +2405,24 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     cv.setPointerCapture(ev.pointerId);
     input.down = true; input.x = p.x; input.y = p.y;
     input.lx = p.x; input.ly = p.y; input.hasLast = true;
+    input.rawX = raw.x; input.rawY = raw.y;
     run.cutPath = [];
   });
   cv.addEventListener('pointermove', function (ev) {
     if (!input.down) return;
     ev.preventDefault();
-    var p = shiftedPoint(ev);
-    input.x = p.x; input.y = p.y;
+    var raw2 = rawPoint(ev);
+    input.rawX = raw2.x; input.rawY = raw2.y;
+    input.x = raw2.x; input.y = raw2.y - THUMB_OFFSET;
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (e) {
     cv.addEventListener(e, function () {
       input.down = false; input.hasLast = false;
-      if (run) run.cutPath = [];
+      if (run) {
+        run.cutPath = [];
+        // letting go mid-defuse throws away all progress on every armed mine
+        if (run.layer) run.layer.hazards.forEach(function (hz) { if (hz.kind === 'mine') hz.defuseT = 0; });
+      }
     });
   });
 
