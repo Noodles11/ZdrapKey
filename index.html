@@ -201,7 +201,11 @@
       than the mine itself, so you'll see red before you reach the core &mdash; it shrinks the deeper you go.<br><br>
       Dirt layers sometimes have small bugs wandering across them. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
-      <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.
+      <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.<br><br>
+      <b>Scissors</b> cut a thin line like any tool, but close the line into a loop and the whole
+      inside pops out instantly. Cardboard, Topsoil, Sand and Clay are soft enough to keep whatever
+      loot was inside; cut a loop through anything harder and the clear still happens, but the loot
+      inside is lost.
     </p>
   </div>
 
@@ -269,13 +273,16 @@ var DIG = (function () {
   };
 
   /* ---------------- materials ---------------- */
-  // mult   : hardness multiplier
-  // fragile: layer can collapse mid-dig, and wide/blunt tools shatter its loot
-  // requires: if set, only these tools make real progress
+  // mult        : hardness multiplier
+  // fragile     : layer can collapse mid-dig, and wide/blunt tools shatter its loot
+  // requires    : if set, only these tools make real progress
+  // scissorSafe : cutting a closed loop here with scissors keeps whatever loot
+  //               was inside it; everywhere else the loot is forfeited
   var MATERIALS = {
-    topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false },
-    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false },
-    clay:      { id:'clay',      name:'Clay',       mult:0.90, color:'#B6624E', grain:'#813120', fragile:false },
+    topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, scissorSafe:true },
+    cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, scissorSafe:true },
+    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false, scissorSafe:true },
+    clay:      { id:'clay',      name:'Clay',       mult:0.90, color:'#B6624E', grain:'#813120', fragile:false, scissorSafe:true },
     gravel:    { id:'gravel',    name:'Gravel',     mult:1.05, color:'#8A9397', grain:'#515A5D', fragile:false },
     chalk:     { id:'chalk',     name:'Chalk',      mult:0.95, color:'#57534C', grain:'#38342D', fragile:true  },
     shale:     { id:'shale',     name:'Shale',      mult:1.25, color:'#737679', grain:'#46494B', fragile:false },
@@ -297,7 +304,7 @@ var DIG = (function () {
     bugs:      { id:'bugs',      name:'Swarm Nest', mult:1.45, color:'#763232', grain:'#351717', fragile:false }
   };
 
-  var FIXED_SEQ  = ['topsoil','sand','clay','gravel','chalk','shale','sandstone','limestone'];
+  var FIXED_SEQ  = ['topsoil','cardboard','sand','clay','gravel','chalk','shale','sandstone','limestone'];
   var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith'];
   var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
 
@@ -308,11 +315,14 @@ var DIG = (function () {
   // minDepth : cannot be equipped shallower than this
   // reward   : true if only obtainable as a milestone reward, never buried
   // detectsHazards : true if equipping it periodically flashes nearby mines
+  // canCut   : true if closing a loop with it instantly clears the interior
   var TOOLS = [
     { id:'hand',   name:'Bare Hand',      radius:3.6, shape:'round', power:1.0, minDepth:1,
       note:'Always available. Never breaks.' },
     { id:'coin',   name:'Worn Coin',      radius:2.4, shape:'wedge', power:1.5, minDepth:1,
       note:'Fine edge. Safe on fragile crust.' },
+    { id:'scissors', name:'Scissors',     radius:1.2, shape:'wedge', power:1.1, minDepth:2,
+      canCut:true, note:'Close a loop to pop out everything inside.' },
     { id:'brush',  name:'Wire Brush',     radius:5.6, shape:'bar',   power:1.6, minDepth:3,
       note:'Wide sweep. Shatters fragile loot.' },
     { id:'chisel', name:'Cold Chisel',    radius:2.8, shape:'wedge', power:3.2, minDepth:5,
@@ -1128,6 +1138,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.seamRevealed = false;
     run.detectTimer = 0;
     run.detectPulse = 0;
+    run.cutPath = [];
     input.hasLast = false;
     // a tool that can no longer be equipped at this depth falls back to the hand
     var t = DIG.TOOL_BY_ID[run.tool];
@@ -1357,11 +1368,126 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var p = toPx(b.x, b.y);
       spark(p.x, p.y, L.material.grain, 1 + Math.random() * 2);
     }
-    checkWorld(b);
+    if (tool.canCut) trackCut(b);
+    if (phase === 'dig') checkWorld(b);
+  }
+
+  /* ------------------------------------------------------ scissors: closing */
+  /* a loop over the crust instantly pops out everything inside it           */
+  var CUT_MIN_STEP = 1.1;    // cells between recorded lasso points
+  var CUT_CLOSE_DIST = 2.4;  // cells - how close the path must return to itself
+  var CUT_MIN_LOOP = 10;     // minimum recorded points before a loop can close
+
+  function trackCut(b) {
+    var path = run.cutPath;
+    var last = path[path.length - 1];
+    if (last && DIG.dist(last.x, last.y, b.x, b.y) < CUT_MIN_STEP) return;
+    path.push({ x: b.x, y: b.y });
+    if (path.length < CUT_MIN_LOOP) return;
+    for (var k = 0; k < path.length - CUT_MIN_LOOP; k++) {
+      if (DIG.dist(path[k].x, path[k].y, b.x, b.y) <= CUT_CLOSE_DIST) {
+        cutInterior(path.slice(k));
+        run.cutPath = [];
+        return;
+      }
+    }
+  }
+
+  function pointInPoly(x, y, poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+      var hit = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+
+  // does any point along the wire's path fall inside the cut polygon?
+  function polyCrossesWire(poly, pts) {
+    for (var k = 0; k < pts.length - 1; k++) {
+      for (var t = 0; t <= 1.0001; t += 0.2) {
+        var px = pts[k].x + (pts[k + 1].x - pts[k].x) * t;
+        var py = pts[k].y + (pts[k + 1].y - pts[k].y) * t;
+        if (pointInPoly(px, py, poly)) return { x: px, y: py };
+      }
+    }
+    return null;
+  }
+
+  function cutInterior(poly) {
+    var L = run.layer;
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, i;
+    for (i = 0; i < poly.length; i++) {
+      minX = Math.min(minX, poly[i].x); maxX = Math.max(maxX, poly[i].x);
+      minY = Math.min(minY, poly[i].y); maxY = Math.max(maxY, poly[i].y);
+    }
+    var x0 = Math.max(0, Math.floor(minX)), x1 = Math.min(GW - 1, Math.ceil(maxX));
+    var y0 = Math.max(0, Math.floor(minY)), y1 = Math.min(GH - 1, Math.ceil(maxY));
+    if (x1 < x0 || y1 < y0) return;
+
+    var removed = 0, x, y;
+    for (y = y0; y <= y1; y++) {
+      for (x = x0; x <= x1; x++) {
+        if (!pointInPoly(x + 0.5, y + 0.5, poly)) continue;
+        var idxc = y * GW + x;
+        removed += run.integrity[idxc];
+        run.integrity[idxc] = 0;
+      }
+    }
+    run.removed += removed;
+
+    var safe = !!L.material.scissorSafe;
+    L.items.forEach(function (it) {
+      if (it.taken || !pointInPoly(it.x, it.y, poly)) return;
+      if (safe) { collect(it); return; }
+      it.taken = true;
+      burst(toPx(it.x, it.y), '#6b6b6b', 8);
+      floatText(toPx(it.x, it.y), 'LOST', '#8a8f96');
+    });
+
+    updateHud();
+    buzz(20);
+    banner(safe ? 'CLEAN CUT' : 'ROUGH CUT · LOOT LOST');
+    var cp = toPx((minX + maxX) / 2, (minY + maxY) / 2);
+    burst(cp, safe ? '#ffffff' : '#8a8f96', 26, 3);
+
+    // a hazard inside the cut fires exactly as if you'd uncovered it by hand
+    for (i = 0; i < L.hazards.length; i++) {
+      var hz = L.hazards[i];
+      if (hz.kind === 'mine' && !hz.dead && pointInPoly(hz.x, hz.y, poly)) { detonate(hz); return; }
+    }
+    for (i = 0; i < L.hazards.length; i++) {
+      var cz = L.hazards[i];
+      if (cz.kind !== 'circuit' || !cz.live) continue;
+      var hit = polyCrossesWire(poly, cz.points);
+      if (hit) {
+        if (run.tool === 'probe') {
+          cz.live = false;
+          run.revealedCircuits[cz.id] = true;
+          run.coins += 12;
+          banner('CIRCUIT SHORTED');
+          burst(toPx(hit.x, hit.y), DIG.SIGNAL_COLORS.circuit, 18);
+          buzz(24);
+          updateHud();
+        } else {
+          run.revealedCircuits[cz.id] = true;
+          electrocute(cz, hit);
+          return;
+        }
+      }
+    }
+
+    if (!L.isBoss && !run.seamRevealed) {
+      var rv = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
+      if (integrityAt(L.target.x, L.target.y) <= rv && pointInPoly(L.target.x, L.target.y, poly)) revealSeam();
+    }
+    if (L.fragile && !run.collapsing && clearedFraction() >= C.FRAGILE_TRIGGER) collapse();
   }
 
   /* ------------------------------------------------------ world reactions */
   function checkWorld(cur) {
+    if (phase !== 'dig') return;
     var L = run.layer, i;
 
     // mines
@@ -1865,6 +1991,25 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     drawBugs();
 
+    // the scissors' in-progress lasso, so the player can see the loop forming
+    if (run.tool === 'scissors' && run.cutPath.length) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.lineWidth = Math.max(1.5, view.cell * 0.18);
+      ctx.setLineDash([view.cell * 0.5, view.cell * 0.4]);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      var cp0 = toPx(run.cutPath[0].x, run.cutPath[0].y);
+      ctx.moveTo(cp0.x, cp0.y);
+      for (var ci = 1; ci < run.cutPath.length; ci++) {
+        var cpn = toPx(run.cutPath[ci].x, run.cutPath[ci].y);
+        ctx.lineTo(cpn.x, cpn.y);
+      }
+      if (input.down) ctx.lineTo(input.x, input.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // a detecting tool briefly shows mine auras straight through solid crust
     if (run.detectPulse > 0) {
       var L3 = run.layer;
@@ -1963,7 +2108,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   /* ------------------------------------------------------------ tool wheel */
   function toolGlyph(id, size) {
-    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7', spray:'#56B4E9' }[id];
+    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7', spray:'#56B4E9', scissors:'#E69F00' }[id];
     var body = {
       hand:  '<path d="M10 22V11a2 2 0 014 0v6m0-6V9a2 2 0 014 0v8m0-6a2 2 0 014 0v10a6 6 0 01-6 6h-4a6 6 0 01-6-6v-3"/>',
       coin:  '<circle cx="16" cy="16" r="9"/><circle cx="16" cy="16" r="4"/>',
@@ -1972,7 +2117,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       probe: '<path d="M16 3v16"/><circle cx="16" cy="24" r="5"/>',
       drill: '<path d="M8 8h12v8H8z"/><path d="M20 10h5v4h-5z"/><path d="M12 16v10"/>',
       spray: '<circle cx="16" cy="18" r="4"/><circle cx="16" cy="18" r="9" stroke-dasharray="3 4"/>' +
-             '<circle cx="16" cy="18" r="13" stroke-dasharray="2 6"/>'
+             '<circle cx="16" cy="18" r="13" stroke-dasharray="2 6"/>',
+      scissors: '<circle cx="9" cy="24" r="4"/><circle cx="23" cy="24" r="4"/><path d="M11 22L25 7M21 22L7 7"/>'
     }[id];
     return '<svg viewBox="0 0 32 32" width="' + (size || 30) + '" height="' + (size || 30) +
       '" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -2062,6 +2208,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     cv.setPointerCapture(ev.pointerId);
     input.down = true; input.x = p.x; input.y = p.y;
     input.lx = p.x; input.ly = p.y; input.hasLast = true;
+    run.cutPath = [];
   });
   cv.addEventListener('pointermove', function (ev) {
     if (!input.down) return;
@@ -2070,7 +2217,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     input.x = p.x; input.y = p.y;
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (e) {
-    cv.addEventListener(e, function () { input.down = false; input.hasLast = false; });
+    cv.addEventListener(e, function () {
+      input.down = false; input.hasLast = false;
+      if (run) run.cutPath = [];
+    });
   });
 
   $('toolBtn').addEventListener('click', function () { wheelOpen ? closeWheel() : openWheel(); });
