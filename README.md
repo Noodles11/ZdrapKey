@@ -181,6 +181,8 @@ circuits.
   crust like ordinary loot. Dig it up and hold a thumb exactly on it (no
   offset) for 3 seconds to permanently kill every live circuit on the layer —
   sometimes the only way to safely reach a seam or loot a wire was guarding.
+  Progress shows on the same top-of-screen bar a mine's defusing uses, just
+  tinted the switch's own colour instead of green.
 
 Density and lethality rise with depth. The vault carries none.
 

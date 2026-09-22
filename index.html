@@ -246,7 +246,8 @@
       Each one cycles energized (bright, dangerous) and dormant (dim, safe) on its own random timer; scratching
       it while thin only ends the run if it's currently energized. A hidden <b>off-switch</b> is buried
       somewhere on every layer with a circuit &mdash; dig it up and hold your thumb exactly on it for 3 seconds
-      to permanently kill every circuit on the layer.<br><br>
+      to permanently kill every circuit on the layer, tracked on the same top-of-screen bar as defusing a
+      mine.<br><br>
       Natural ground &mdash; Topsoil, Sand, Clay, Gravel &mdash; sometimes hides small bugs, buried under the
       crust like any other signal, only showing where you've dug. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
@@ -2516,20 +2517,31 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     c.restore();
   }
 
-  // defuse progress shows as a subtle bar near the top of the screen rather
-  // than an overlay on the mine itself
+  // holding to defuse a mine or holding the off-switch to kill circuits both
+  // show the same subtle bar near the top of the screen rather than an
+  // overlay on the thing itself - only one can ever be in progress at once
   function updateDefuseBar() {
-    var L = run && run.layer, active = null;
+    var L = run && run.layer, active = null, total = 0, progress = 0, color = '#3BE08C';
     if (L) {
-      for (var i = 0; i < L.hazards.length; i++) {
+      for (var i = 0; i < L.hazards.length && !active; i++) {
         var hz = L.hazards[i];
-        if (hz.kind === 'mine' && hz.fuseStarted && !hz.dead && !hz.settled && hz.defuseT > 0) { active = hz; break; }
+        if (hz.kind === 'mine' && hz.fuseStarted && !hz.dead && !hz.settled && hz.defuseT > 0) {
+          active = hz; total = MINE_DEFUSE_TIME; progress = hz.defuseT; color = '#3BE08C';
+        }
+      }
+      for (var j = 0; j < L.items.length && !active; j++) {
+        var it = L.items[j];
+        if (it.kind === 'switch' && !it.taken && it.holdT > 0) {
+          active = it; total = SWITCH_HOLD_TIME; progress = it.holdT; color = DIG.SIGNAL_COLORS.switch;
+        }
       }
     }
     var bar = $('defuseBar');
     if (!active) { bar.classList.remove('show'); return; }
-    var df = Math.min(1, active.defuseT / MINE_DEFUSE_TIME);
-    $('defuseFill').style.width = (df * 100) + '%';
+    var df = Math.min(1, progress / total);
+    var fill = $('defuseFill');
+    fill.style.width = (df * 100) + '%';
+    fill.style.background = color;
     bar.classList.add('show');
   }
 
@@ -2560,19 +2572,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       }
       ctx.restore();
     }
-  }
-
-  function drawSwitchHold(c, it) {
-    var p = toPx(it.x, it.y), cell = view.cell;
-    var df = Math.min(1, it.holdT / SWITCH_HOLD_TIME);
-    c.save();
-    c.translate(p.x, p.y);
-    c.strokeStyle = DIG.SIGNAL_COLORS.switch;
-    c.lineWidth = cell * 0.4;
-    c.beginPath();
-    c.arc(0, 0, cell * 2.2, -Math.PI / 2, -Math.PI / 2 + df * 6.2832);
-    c.stroke();
-    c.restore();
   }
 
   function drawBuried() {
@@ -2854,12 +2853,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (mzArmed.kind === 'mine' && mzArmed.fuseStarted && !mzArmed.dead && !mzArmed.settled) {
         drawArmedMine(ctx, mzArmed);
       }
-    }
-
-    // the off-switch's hold progress, same treatment as a mine's defuse ring
-    for (var si = 0; si < L5.items.length; si++) {
-      var swIt = L5.items[si];
-      if (swIt.kind === 'switch' && !swIt.taken && swIt.holdT > 0) drawSwitchHold(ctx, swIt);
     }
 
     // particles + floaters
