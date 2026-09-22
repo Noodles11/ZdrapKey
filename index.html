@@ -2036,9 +2036,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   /* ------------------------------------------------------------ input */
+  // the working point is lifted above the raw touch so a thumb resting on
+  // the glass doesn't sit on top of what it's actually doing
+  var THUMB_OFFSET = 46;
   function local(ev) {
     var r = cv.getBoundingClientRect();
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top - THUMB_OFFSET };
   }
   cv.addEventListener('pointerdown', function (ev) {
     if (phase !== 'dig' || wheelOpen) return;
