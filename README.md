@@ -58,13 +58,14 @@ A "clear loadout" option refunds anything bought but not yet spent on a run.
 
 Depths 1–9 walk a fixed sequence, softest first: Topsoil, Cardboard, Sand, Clay,
 Gravel, Chalk, Shale, Sandstone, Limestone. After that the layers cycle Basalt →
-Granite → Quartzite → Obsidian → Ferrolith, getting harder each time around.
-Hardness approaches a ceiling asymptotically rather than growing without bound.
+Granite → Quartzite → Obsidian → Ferrolith → Meteorite, getting harder each time
+around. Hardness approaches a ceiling asymptotically rather than growing without
+bound.
 
 Obsidian, Ferrolith and reinforced plating can only be worked with specific
 tools. Chalk and Quartzite are **fragile**: dig far enough and the floor gives
 way mid-layer — a scripted fall-through that costs you the layer's remaining
-loot but not the run.
+loot but not the run. Meteorite doesn't work like the rest at all — see below.
 
 Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 **Swarm Nest**, into the deep cycle.
@@ -77,7 +78,7 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | Worn Coin | 2.4 | wedge | ×1.5 | 1 | fine edge, safe on fragile crust |
 | Scissors | 1.2 | wedge | ×1.1 | 2 | close a loop on paper-like crust to pop it out |
 | Wire Brush | 5.6 | bar | ×1.6 | 3 | wide sweep, shatters fragile loot |
-| Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian |
+| Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian or meteorite |
 | Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits, pings nearby mines |
 | Core Drill | 3.6 | round | ×6.0 | 15 | punches anything, wakes mines early |
 | Dissolving Spray | 4.4 | gradient | ×2.1 | 1 | wide, soft-edged mist — earned, never found |
@@ -114,6 +115,33 @@ need a separate tap. A mine or live circuit caught inside reacts exactly as
 if you'd uncovered it with any other tool. On every other material the loop
 trick simply doesn't work: the scissors just cut their usual thin line,
 nothing more.
+
+## Meteorite: a different kind of layer
+
+Meteorite, out in the deep cycle, isn't crust at all — there's nothing to
+scratch away. Instead the whole layer is a solid shell of triangular plates,
+floating in space, that only the **Cold Chisel** or **Core Drill** can bite
+into (carrying either as part of a combo is enough). Anything weaker just
+bounces off with a spark.
+
+Tap a still-solid plate and it splits into four smaller ones with a gap
+opened up between them — those four are now **loose**: they drift slowly,
+spin, and bounce off any other loose piece they touch, forever, until
+something happens to them. Tap a loose piece again and it splits the same
+way, smaller still. Once a piece is small enough — three splits down from
+where it started — a tap **pops** it instead of splitting it, and it's gone
+for good, with anything buried in that exact patch of rock (a coin, a
+fragment, a tool) coming free right along with it.
+
+A **swipe** never breaks or pops anything, however hard or fast it drags
+across the field — it only shoves nearby loose pieces a little further in
+the direction it's moving.
+
+There's still a seam buried somewhere in the shell, same as any other layer.
+It has no crust to thin, so instead it turns up the moment the one plate that
+used to sit over it has finally been popped away — everything else in the
+field can be left whole. Meteorite carries none of the usual mines or live
+circuits.
 
 ## Hazards
 

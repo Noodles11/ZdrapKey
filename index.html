@@ -245,6 +245,12 @@
       <b>Scissors</b> cut a thin line like any tool. On paper-like crust &mdash; Cardboard, so far &mdash;
       closing that line into a loop pops the whole inside out instantly, loot included. On anything else
       the loop trick just doesn't work: they're a plain blade there.<br><br>
+      <b>Meteorite</b> layers, out in the deep cycle, have no crust to scratch at all &mdash; just a solid
+      shell of triangular plates, and only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite into one.
+      Tap a plate to break it into four smaller ones with a gap between them; those loose pieces drift and
+      bounce off each other until a tap on one small enough pops it away for good. Swiping only shoves loose
+      pieces around &mdash; it never breaks anything. The seam turns up once the plate that used to sit over
+      it has been popped away.<br><br>
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
@@ -345,11 +351,15 @@ var DIG = (function () {
                  fragile:false, requires:['chisel','drill','probe'] },
     vault:     { id:'vault',     name:'Vault Seal', mult:1.20, color:'#AD8A4E', grain:'#604404', fragile:false },
     // unlocked permanently once enough bugs have been cleared
-    bugs:      { id:'bugs',      name:'Swarm Nest', mult:1.45, color:'#763232', grain:'#351717', fragile:false }
+    bugs:      { id:'bugs',      name:'Swarm Nest', mult:1.45, color:'#763232', grain:'#351717', fragile:false },
+    // a wholly different surface: a solid fractal shell of triangular plates
+    // floating in space, tapped apart piece by piece instead of scratched away
+    meteorite: { id:'meteorite', name:'Meteorite',  mult:1.65, color:'#493276', grain:'#231145', fragile:false,
+                 meteor:true, requires:['chisel','drill'] }
   };
 
   var FIXED_SEQ  = ['topsoil','cardboard','sand','clay','gravel','chalk','shale','sandstone','limestone'];
-  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith'];
+  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite'];
   var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
 
   /* ---------------- tools ---------------- */
@@ -611,7 +621,9 @@ var DIG = (function () {
       path: null
     };
 
-    var counts = hazardCounts(depth, rng);
+    // a meteorite is smashed apart piece by piece, not scratched away, so it
+    // never carries the usual buried mines or live circuits
+    var counts = mat.meteor ? { mines: 0, circuits: 0 } : hazardCounts(depth, rng);
     var bossClearance = C.SEP.TARGET_HAZARD * 0.65;
 
     /* --- on a boss layer the channel is laid down FIRST, so every hazard that
@@ -1325,10 +1337,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       hz.zapDuration = randRange(hz.zapOn ? CIRCUIT_ON_RANGE : CIRCUIT_OFF_RANGE);
       hz.zapT = Math.random() * hz.zapDuration;
     });
+    // a meteorite has no crust to scratch through at all - it's a shell of
+    // solid triangular plates, built fresh every time the layer loads
+    run.meteorShards = L.material.meteor ? buildMeteorField() : null;
     // the material name is imprinted on the crust itself now, so only layers
-    // with something extra to say (vault, boss) still get a banner
+    // with something extra to say (vault, boss, meteorite) still get a banner
     if (L.isVault) banner('THE VAULT');
     else if (L.isBoss) banner('REINFORCED · TRACE THE CHANNEL');
+    else if (L.material.meteor) banner('METEORITE FIELD · SMASH THROUGH TO THE SEAM');
   }
 
   function spawnBugs() {
@@ -1493,6 +1509,262 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     banner(killed ? 'CIRCUITS DISABLED' : 'SWITCH FLIPPED');
     buzz([20, 40, 20, 40]);
     burst(toPx(it.x, it.y), DIG.SIGNAL_COLORS.switch, 30, 4);
+  }
+
+  /* ------------------------------------------------------------ meteorite */
+  // No crust to scratch through here: a meteorite is a shell of triangular
+  // plates. Tapping a still-solid plate splits it into four smaller ones with
+  // a gap between them; those loose pieces drift and bounce off each other
+  // forever until a tap on one small enough pops it away for good. A swipe
+  // only shoves loose pieces around - it can never split or pop anything.
+  var MET_CELL = 6;        // grid-cell span of one root triangle pair
+  var MET_MAX_LEVEL = 2;   // 0 = whole root, MET_MAX_LEVEL = smallest, pops on tap
+  var MET_PAD = 0.86;      // loose pieces draw/collide at this fraction of full size
+  var MET_DRIFT = 0.5;     // idle drift acceleration, cells/sec^2
+  var MET_SWIPE_PUSH = 2.6;  // velocity a swipe imparts on nearby loose pieces
+  var MET_SWIPE_REACH = 4.5; // cells - how far a swipe's push reaches
+  var MET_HIT_MULT = 1.5, MET_HIT_MIN = 2.0; // generous circular tap zones
+
+  function meteorMid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  function meteorCentroid(v) { return { x: (v[0].x + v[1].x + v[2].x) / 3, y: (v[0].y + v[1].y + v[2].y) / 3 }; }
+  // the standard four-way triangle subdivision: three corner pieces similar
+  // to the parent plus one rotated piece in the middle - together they
+  // exactly retile the parent's original area, with no gaps and no overlap
+  function meteorChildren(v) {
+    var ab = meteorMid(v[0], v[1]), bc = meteorMid(v[1], v[2]), ca = meteorMid(v[2], v[0]);
+    return [[v[0], ab, ca], [ab, v[1], bc], [ca, bc, v[2]], [ab, bc, ca]];
+  }
+  function meteorPointInTri(px, py, v) {
+    var d1 = (px - v[1].x) * (v[0].y - v[1].y) - (v[0].x - v[1].x) * (py - v[1].y);
+    var d2 = (px - v[2].x) * (v[1].y - v[2].y) - (v[1].x - v[2].x) * (py - v[2].y);
+    var d3 = (px - v[0].x) * (v[2].y - v[0].y) - (v[2].x - v[0].x) * (py - v[0].y);
+    var neg = (d1 < 0) || (d2 < 0) || (d3 < 0), pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    return !(neg && pos);
+  }
+
+  function makeMeteorShard(v, level) {
+    var c = meteorCentroid(v);
+    return {
+      v: v, level: level, cx: c.x, cy: c.y, ox: 0, oy: 0, vx: 0, vy: 0,
+      rot: 0, rotV: 0, driftA: Math.random() * 6.2832,
+      whole: level === 0, popped: false
+    };
+  }
+
+  // tiles the whole field with right-triangle pairs, alternating the split
+  // diagonal in a checkerboard so the untouched shell doesn't look uniform
+  function buildMeteorField() {
+    var shards = [], cols = Math.ceil(GW / MET_CELL), rows = Math.ceil(GH / MET_CELL);
+    for (var ry = 0; ry < rows; ry++) {
+      for (var rx = 0; rx < cols; rx++) {
+        var x0 = rx * MET_CELL, y0 = ry * MET_CELL;
+        var x1 = Math.min(GW, x0 + MET_CELL), y1 = Math.min(GH, y0 + MET_CELL);
+        if (x1 <= x0 || y1 <= y0) continue;
+        var A = { x: x0, y: y0 }, B = { x: x1, y: y0 }, Cc = { x: x1, y: y1 }, D = { x: x0, y: y1 };
+        var flip = (rx + ry) % 2 === 0;
+        shards.push(makeMeteorShard(flip ? [A, B, D] : [A, B, Cc], 0));
+        shards.push(makeMeteorShard(flip ? [B, Cc, D] : [A, Cc, D], 0));
+      }
+    }
+    return shards;
+  }
+
+  function meteorShardRadius(sh) {
+    var r = 0;
+    for (var k = 0; k < 3; k++) r = Math.max(r, DIG.dist(sh.cx, sh.cy, sh.v[k].x, sh.v[k].y));
+    return r;
+  }
+  function meteorShardCenter(sh) { return { x: sh.cx + sh.ox, y: sh.cy + sh.oy }; }
+
+  function removeMeteorShard(sh) {
+    var i = run.meteorShards.indexOf(sh);
+    if (i >= 0) run.meteorShards.splice(i, 1);
+  }
+
+  // the target is "revealed" the instant nothing in the shell still covers
+  // its original spot - which, since every live shard's own untouched
+  // geometry always exactly retiles the whole field, means the one leaf
+  // that used to sit over it has finally been popped away
+  function checkMeteorTarget() {
+    if (run.seamRevealed || !run.layer.target) return;
+    var t = run.layer.target, shards = run.meteorShards;
+    for (var i = 0; i < shards.length; i++) {
+      if (meteorPointInTri(t.x, t.y, shards[i].v)) return;
+    }
+    revealSeam();
+  }
+
+  function canBreakMeteor() {
+    var req = run.layer.material.requires;
+    if (!req) return true;
+    return req.some(function (id) { return hasTool(id); });
+  }
+
+  function meteorShardAt(cellPt) {
+    var shards = run.meteorShards, best = null, bestD = Infinity;
+    for (var i = 0; i < shards.length; i++) {
+      var sh = shards[i], c = meteorShardCenter(sh);
+      var d = DIG.dist(cellPt.x, cellPt.y, c.x, c.y);
+      var r = Math.max(MET_HIT_MIN, meteorShardRadius(sh) * MET_HIT_MULT);
+      if (d <= r && d < bestD) { bestD = d; best = sh; }
+    }
+    return best;
+  }
+
+  function splitMeteorShard(sh) {
+    removeMeteorShard(sh);
+    var p0 = toPx(sh.cx, sh.cy);
+    burst(p0, run.layer.material.grain, 10, 2);
+    buzz(10);
+    meteorChildren(sh.v).forEach(function (kv) {
+      var kid = makeMeteorShard(kv, sh.level + 1);
+      var kc = meteorCentroid(kv);
+      var ang = Math.atan2(kc.y - sh.cy, kc.x - sh.cx) || Math.random() * 6.2832;
+      var sp = 0.6 + Math.random() * 0.5;
+      kid.vx = Math.cos(ang) * sp; kid.vy = Math.sin(ang) * sp;
+      kid.rotV = (Math.random() - 0.5) * 1.6;
+      run.meteorShards.push(kid);
+    });
+    checkMeteorTarget();
+  }
+
+  function popMeteorShard(sh) {
+    removeMeteorShard(sh);
+    var p = toPx(sh.cx + sh.ox, sh.cy + sh.oy);
+    burst(p, run.layer.material.grain, 14, 2.4);
+    burst(p, '#ffffff', 6, 1.4);
+    buzz(6);
+    // anything embedded in this exact patch of rock comes free once it pops -
+    // the pop is itself the explicit tap that loots it
+    run.layer.items.forEach(function (it) {
+      if (!it.taken && meteorPointInTri(it.x, it.y, sh.v)) collect(it);
+    });
+    checkMeteorTarget();
+  }
+
+  function tapMeteor(cellPt) {
+    var sh = meteorShardAt(cellPt);
+    if (!sh) return;
+    if (!canBreakMeteor()) {
+      var p = toPx(sh.cx + sh.ox, sh.cy + sh.oy);
+      spark(p.x, p.y, '#9fb0e0', 2);
+      if (!run.warned) {
+        run.warned = true;
+        banner('TOO TOUGH · NEEDS A HEAVIER TOOL');
+        buzz([8, 30, 8]);
+      }
+      return;
+    }
+    if (sh.level < MET_MAX_LEVEL) splitMeteorShard(sh); else popMeteorShard(sh);
+  }
+
+  // a swipe only nudges loose pieces near its path - it never splits or
+  // pops anything, however hard or fast it drags across the field
+  function applyMeteorSwipe() {
+    var a = toCell(input.lx, input.ly), b = toCell(input.x, input.y);
+    var dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 0.01) return;
+    var nx = dx / len, ny = dy / len, shards = run.meteorShards;
+    for (var i = 0; i < shards.length; i++) {
+      var sh = shards[i];
+      if (sh.whole) continue;
+      var c = meteorShardCenter(sh);
+      var d = DIG.dist(b.x, b.y, c.x, c.y);
+      if (d > MET_SWIPE_REACH) continue;
+      var f = 1 - d / MET_SWIPE_REACH;
+      sh.vx += nx * MET_SWIPE_PUSH * f;
+      sh.vy += ny * MET_SWIPE_PUSH * f;
+    }
+  }
+
+  function stepMeteor(dt) {
+    var shards = run.meteorShards, i;
+    for (i = 0; i < shards.length; i++) {
+      var sh = shards[i];
+      if (sh.whole) continue;
+      sh.driftA += (Math.random() - 0.5) * 1.4 * dt;
+      sh.vx += Math.cos(sh.driftA) * MET_DRIFT * dt;
+      sh.vy += Math.sin(sh.driftA) * MET_DRIFT * dt;
+      sh.vx *= 0.985; sh.vy *= 0.985;
+      sh.ox += sh.vx * dt; sh.oy += sh.vy * dt;
+      sh.rot += sh.rotV * dt;
+      var dd = Math.sqrt(sh.ox * sh.ox + sh.oy * sh.oy);
+      if (dd > 3.5) { sh.ox *= 0.96; sh.oy *= 0.96; sh.vx *= 0.9; sh.vy *= 0.9; }
+    }
+    // loose pieces gently push each other apart instead of overlapping
+    for (i = 0; i < shards.length; i++) {
+      var a = shards[i];
+      if (a.whole) continue;
+      var ac = meteorShardCenter(a), ar = meteorShardRadius(a) * MET_PAD;
+      for (var j = i + 1; j < shards.length; j++) {
+        var b = shards[j];
+        if (b.whole) continue;
+        var bc = meteorShardCenter(b), br = meteorShardRadius(b) * MET_PAD;
+        var dx = bc.x - ac.x, dy = bc.y - ac.y, dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        var minD = (ar + br) * 0.9;
+        if (dist >= minD) continue;
+        var overlap = (minD - dist) / 2, nx = dx / dist, ny = dy / dist;
+        a.ox -= nx * overlap; a.oy -= ny * overlap;
+        b.ox += nx * overlap; b.oy += ny * overlap;
+        var rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+        if (rel < 0) {
+          a.vx += nx * rel * 0.5; a.vy += ny * rel * 0.5;
+          b.vx -= nx * rel * 0.5; b.vy -= ny * rel * 0.5;
+        }
+      }
+    }
+  }
+
+  function drawMeteorField() {
+    var w = view.w, h = view.h, cell = view.cell;
+    ctx.fillStyle = '#05060c'; ctx.fillRect(0, 0, w, h);
+    // a deterministic starfield so it never swims between frames or reloads
+    var srng = DIG.rngFor(run.seed, run.layer.depth, 'stars');
+    for (var s = 0; s < 80; s++) {
+      var sx = srng() * w, sy = srng() * h, sr = 0.5 + srng() * 1.3;
+      ctx.globalAlpha = 0.25 + srng() * 0.5;
+      ctx.fillStyle = '#dfe6ff';
+      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    var m = run.layer.material, shards = run.meteorShards;
+    for (var i = 0; i < shards.length; i++) {
+      var sh = shards[i], c = meteorShardCenter(sh), p = toPx(c.x, c.y);
+      var pad = sh.whole ? 1 : MET_PAD;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(sh.rot);
+      ctx.beginPath();
+      for (var k = 0; k < 3; k++) {
+        var vx = (sh.v[k].x - sh.cx) * pad * cell, vy = (sh.v[k].y - sh.cy) * pad * cell;
+        k ? ctx.lineTo(vx, vy) : ctx.moveTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.fillStyle = m.color; ctx.fill();
+      ctx.strokeStyle = m.grain; ctx.lineWidth = Math.max(1, cell * 0.12); ctx.stroke();
+      if (!sh.whole) {
+        ctx.strokeStyle = 'rgba(255,255,255,.18)';
+        ctx.lineWidth = Math.max(1, cell * 0.06);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // the seam only shows once the plate that used to sit over it is gone -
+    // there is no crust here to thin and reveal it any other way
+    if (run.seamRevealed) {
+      var tp = toPx(run.layer.target.x, run.layer.target.y);
+      ctx.save(); ctx.translate(tp.x, tp.y);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      for (var z = 0; z < 8; z++) {
+        var az = z * Math.PI / 4, rr = z % 2 ? cell * 0.8 : cell * 2.1;
+        z ? ctx.lineTo(Math.cos(az) * rr, Math.sin(az) * rr) : ctx.moveTo(Math.cos(az) * rr, Math.sin(az) * rr);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
   }
 
   /* ------------------------------------------------------------ material */
@@ -2452,26 +2724,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     ctx.clearRect(-30, -30, view.w + 60, view.h + 60);
 
-    drawBuried();
+    if (run.layer.material.meteor) {
+      drawMeteorField();
+    } else {
+      drawBuried();
 
-    updateMask();
-    // the crust casts a short shadow into the hole it leaves behind
-    ctx.save();
-    ctx.globalAlpha = 0.62;
-    ctx.drawImage(maskCv, 2, 4, view.w, view.h);
-    ctx.globalAlpha = 0.34;
-    ctx.drawImage(maskCv, 1, 2, view.w, view.h);
-    ctx.restore();
+      updateMask();
+      // the crust casts a short shadow into the hole it leaves behind
+      ctx.save();
+      ctx.globalAlpha = 0.62;
+      ctx.drawImage(maskCv, 2, 4, view.w, view.h);
+      ctx.globalAlpha = 0.34;
+      ctx.drawImage(maskCv, 1, 2, view.w, view.h);
+      ctx.restore();
 
-    tmpCtx.clearRect(0, 0, view.w, view.h);
-    tmpCtx.drawImage(matCv, 0, 0, view.w, view.h);
-    tmpCtx.globalCompositeOperation = 'destination-in';
-    tmpCtx.imageSmoothingEnabled = true;
-    tmpCtx.drawImage(maskCv, 0, 0, view.w, view.h);
-    tmpCtx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
+      tmpCtx.clearRect(0, 0, view.w, view.h);
+      tmpCtx.drawImage(matCv, 0, 0, view.w, view.h);
+      tmpCtx.globalCompositeOperation = 'destination-in';
+      tmpCtx.imageSmoothingEnabled = true;
+      tmpCtx.drawImage(maskCv, 0, 0, view.w, view.h);
+      tmpCtx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
 
-    drawCircuits();
+      drawCircuits();
+    }
 
     // the scissors' in-progress lasso, so the player can see the loop forming
     if (activeTool().canCut && run.cutPath.length) {
@@ -2570,8 +2846,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     if (run && phase !== 'idle') {
       // a mine's fuse burns and circuits keep cycling whether or not a
-      // thumb is on the glass
-      if (phase === 'dig' && !wheelOpen) { stepMines(dt); stepCircuits(dt); }
+      // thumb is on the glass; a meteorite's loose pieces keep drifting and
+      // colliding the same way
+      if (phase === 'dig' && !wheelOpen) {
+        stepMines(dt); stepCircuits(dt);
+        if (run.layer.material.meteor) stepMeteor(dt);
+      }
       if (phase === 'dig' && input.down && !wheelOpen && !run.collapsing) {
         var armedMine = findArmedMineAtRaw();
         var heldSwitch = armedMine ? null : findRevealedSwitchAtRaw();
@@ -2592,8 +2872,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
           resetSwitchHold(null);
           if (!input.hasLast) { input.lx = input.x; input.ly = input.y; input.hasLast = true; }
           run.time += dt;
-          applyStroke(dt);
-          if (run.layer.isBoss) bossUpdate(toCell(input.x, input.y), dt);
+          if (run.layer.material.meteor) {
+            applyMeteorSwipe();
+          } else {
+            applyStroke(dt);
+            if (run.layer.isBoss) bossUpdate(toCell(input.x, input.y), dt);
+          }
           input.lx = input.x; input.ly = input.y;
           updateHud();
         }
@@ -2746,23 +3030,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     ev.preventDefault();
     activePointerId = ev.pointerId;
     var raw = rawPoint(ev);
-    if (run.bugs && run.bugs.length) {
-      var bugReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
-      for (var bi = 0; bi < run.bugs.length; bi++) {
-        var b = run.bugs[bi];
-        if (!b.alive || integrityAt(b.x, b.y) > bugReveal) continue; // hidden below the mask
-        var bp = toPx(b.x, b.y);
-        if (DIG.dist(raw.x, raw.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
+    if (run.layer.material.meteor) {
+      // a meteorite has no bugs and no crust-buried loot to reveal by
+      // digging - just the shell of plates itself, tapped exactly where
+      // pressed like any other deliberate tap
+      tapMeteor(toCell(raw.x, raw.y));
+    } else {
+      if (run.bugs && run.bugs.length) {
+        var bugReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
+        for (var bi = 0; bi < run.bugs.length; bi++) {
+          var b = run.bugs[bi];
+          if (!b.alive || integrityAt(b.x, b.y) > bugReveal) continue; // hidden below the mask
+          var bp = toPx(b.x, b.y);
+          if (DIG.dist(raw.x, raw.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
+        }
       }
-    }
-    // loot only ever comes home if you tap it - uncovering a coin, fragment
-    // or tool by digging near it is never enough on its own
-    var itemReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
-    for (var ii = 0; ii < run.layer.items.length; ii++) {
-      var itTap = run.layer.items[ii];
-      if (itTap.taken || itTap.kind === 'switch' || integrityAt(itTap.x, itTap.y) > itemReveal) continue;
-      var ip = toPx(itTap.x, itTap.y);
-      if (DIG.dist(raw.x, raw.y, ip.x, ip.y) <= view.cell * 2.4) { collect(itTap); return; }
+      // loot only ever comes home if you tap it - uncovering a coin, fragment
+      // or tool by digging near it is never enough on its own
+      var itemReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
+      for (var ii = 0; ii < run.layer.items.length; ii++) {
+        var itTap = run.layer.items[ii];
+        if (itTap.taken || itTap.kind === 'switch' || integrityAt(itTap.x, itTap.y) > itemReveal) continue;
+        var ip = toPx(itTap.x, itTap.y);
+        if (DIG.dist(raw.x, raw.y, ip.x, ip.y) <= view.cell * 2.4) { collect(itTap); return; }
+      }
     }
     if (run.seamRevealed) {
       var sp = toPx(run.layer.target.x, run.layer.target.y);
