@@ -277,6 +277,9 @@
       crust like any other signal, only showing where you've dug. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
       <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.<br><br>
+      <b>Sand</b> and <b>Gravel</b> obey gravity. Clear a full horizontal line all the way across
+      the layer and, half a second later, everything above it slides down to fill the gap &mdash;
+      uncovering the very top of the layer in the process.<br><br>
       <b>Scissors</b> cut a thin line like any tool. On paper-like crust &mdash; Cardboard, so far &mdash;
       closing that line into a loop pops the whole inside out instantly, loot included. On anything else
       the loop trick just doesn't work: they're a plain blade there.<br><br>
@@ -383,12 +386,14 @@ var DIG = (function () {
   //             on every other material scissors are just a plain blade
   // natural   : loose, undeveloped ground bugs can burrow under
   // soft      : loose enough for the Sponge to wipe away at full effect
+  // granular  : loose enough to obey gravity - clearing a full horizontal
+  //             line brings everything above it sliding down
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
-    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false, natural:true, soft:true },
+    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false, natural:true, soft:true, granular:true },
     clay:      { id:'clay',      name:'Clay',       mult:0.90, color:'#B6624E', grain:'#813120', fragile:false, natural:true, soft:true },
-    gravel:    { id:'gravel',    name:'Gravel',     mult:1.05, color:'#8A9397', grain:'#515A5D', fragile:false, natural:true },
+    gravel:    { id:'gravel',    name:'Gravel',     mult:1.05, color:'#8A9397', grain:'#515A5D', fragile:false, natural:true, granular:true },
     // chalk used to be fragile (a mid-layer collapse) - it's just soft rock now
     chalk:     { id:'chalk',     name:'Chalk',      mult:0.95, color:'#57534C', grain:'#38342D', fragile:false, soft:true },
     shale:     { id:'shale',     name:'Shale',      mult:1.25, color:'#737679', grain:'#46494B', fragile:false },
@@ -1448,6 +1453,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.detectTimer = 0;
     run.detectPulse = 0;
     run.cutPath = [];
+    run.gravityPending = false;
     input.hasLast = false;
     // any equipped tool that can no longer be carried at this depth drops
     // out of the combo; falls back to the bare hand if that empties it. Test
@@ -2135,6 +2141,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     if (tool.canCut && L.material.paperLike) trackCut(b);
     if (phase === 'dig') checkWorld(b);
+    if (phase === 'dig' && L.material.granular) checkGravity();
   }
 
   /* ------------------------------------------------------ scissors: closing */
@@ -2247,6 +2254,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (integrityAt(L.target.x, L.target.y) <= rv && pointInPoly(L.target.x, L.target.y, poly)) revealSeam();
     }
     if (L.fragile && !run.collapsing && clearedFraction() >= C.FRAGILE_TRIGGER) collapse();
+    if (L.material.granular) checkGravity();
   }
 
   /* ------------------------------------------------------ world reactions */
@@ -2297,6 +2305,86 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     // fragile collapse
     if (L.fragile && !run.collapsing && clearedFraction() >= C.FRAGILE_TRIGGER) collapse();
+  }
+
+  /* ------------------------------------------------------ granular gravity */
+  // sand and gravel are loose enough that punching a clean tunnel all the way
+  // across a layer leaves nothing to hold up what's above it
+  var GRAVITY_CLEAR_EPS = 0.02;   // integrity at/below this counts as "gone"
+  var GRAVITY_DELAY = 0.5;        // seconds between a full line and it falling
+
+  // every fully-gone row that still has solid ground somewhere above it -
+  // the already-empty rows a previous collapse left at the very top don't
+  // count, since there's nothing left above them to fall any further
+  function findGravityRows() {
+    var rows = [], seenSolid = false, x, y;
+    for (y = 0; y < GH; y++) {
+      var full = true;
+      for (x = 0; x < GW; x++) {
+        if (run.integrity[y * GW + x] > GRAVITY_CLEAR_EPS) { full = false; break; }
+      }
+      if (!full) { seenSolid = true; continue; }
+      if (seenSolid) rows.push(y);
+    }
+    return rows;
+  }
+
+  // drops every row that isn't itself cleared down by however many cleared
+  // rows sit beneath it, then fills in the rows that opens up at the very
+  // top - the same rule a falling-block game clears full lines with
+  function collapseGravity(rows) {
+    var next = new Float32Array(GW * GH); // starts all zero: an uncovered top
+    var isCleared = {};
+    rows.forEach(function (y) { isCleared[y] = true; });
+    for (var y = 0; y < GH; y++) {
+      if (isCleared[y]) continue;
+      var below = 0;
+      for (var k = 0; k < rows.length; k++) if (rows[k] > y) below++;
+      var dst = y + below;
+      for (var x = 0; x < GW; x++) next[dst * GW + x] = run.integrity[y * GW + x];
+    }
+    run.integrity = next;
+  }
+
+  // mines and the seam can end up freshly exposed (or reburied) once the
+  // crust above them lands somewhere new; circuits stay covered until an
+  // actual stroke crosses them, same as always
+  function recheckAfterGravity() {
+    var L = run.layer;
+    for (var i = 0; i < L.hazards.length; i++) {
+      var hz = L.hazards[i];
+      if (hz.kind !== 'mine' || hz.dead || hz.settled || hz.fuseStarted) continue;
+      var trip = hasTool('drill') ? C.MINE_TRIGGER_LOUD : C.MINE_TRIGGER;
+      if (integrityAt(hz.x, hz.y) <= trip) armMine(hz);
+    }
+    if (!L.isBoss && !run.seamRevealed) {
+      var rv = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
+      if (integrityAt(L.target.x, L.target.y) <= rv) revealSeam();
+    }
+    if (L.fragile && !run.collapsing && clearedFraction() >= C.FRAGILE_TRIGGER) collapse();
+  }
+
+  // a full line waits half a second before it actually drops, then settles.
+  // findGravityRows() is re-run fresh at commit time (not reusing whatever
+  // triggered the wait), so any line cleared during the delay - or a second
+  // line entirely - falls in the same collapse
+  function checkGravity() {
+    if (run.gravityPending || !findGravityRows().length) return;
+    run.gravityPending = true;
+    setTimeout(function () {
+      run.gravityPending = false;
+      if (phase !== 'dig' || !run.layer || !run.layer.material.granular) return;
+      var rows = findGravityRows();
+      if (!rows.length) return;
+      collapseGravity(rows);
+      run.removed = 0;
+      for (var i = 0; i < run.integrity.length; i++) run.removed += 1 - run.integrity[i];
+      shake = Math.max(shake, 8);
+      buzz(15);
+      banner(run.layer.material.name.toUpperCase() + ' SHIFTS DOWN');
+      updateHud();
+      recheckAfterGravity();
+    }, GRAVITY_DELAY * 1000);
   }
 
   function collect(it) {

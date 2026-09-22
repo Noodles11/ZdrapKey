@@ -95,6 +95,13 @@ Meteorite doesn't work like the rest at all — see below.
 Topsoil, Cardboard, Sand, Clay and Chalk are all **soft** ground — loose or
 crumbly enough for the Sponge to wipe away in wide strokes.
 
+Sand and Gravel are also **granular**: they obey gravity. Clear a full
+horizontal line all the way across the layer and, half a second later,
+everything above it slides down to fill the gap — one row at a time, however
+many lines happen to be clear at once — uncovering the very top of the layer
+in the process. A mine or the seam can end up freshly exposed, or freshly
+reburied, depending on where the sand settles.
+
 Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 **Swarm Nest**, into the deep cycle.
 
