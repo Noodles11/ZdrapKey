@@ -63,9 +63,13 @@ around. Hardness approaches a ceiling asymptotically rather than growing without
 bound.
 
 Obsidian, Ferrolith and reinforced plating can only be worked with specific
-tools. Chalk and Quartzite are **fragile**: dig far enough and the floor gives
-way mid-layer — a scripted fall-through that costs you the layer's remaining
-loot but not the run. Meteorite doesn't work like the rest at all — see below.
+tools. Quartzite is **fragile**: dig far enough and the floor gives way
+mid-layer — a scripted fall-through that costs you the layer's remaining loot
+but not the run. Chalk is soft rock, not fragile — it never collapses.
+Meteorite doesn't work like the rest at all — see below.
+
+Topsoil, Cardboard, Sand, Clay and Chalk are all **soft** ground — loose or
+crumbly enough for the Sponge to wipe away in wide strokes.
 
 Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 **Swarm Nest**, into the deep cycle.
@@ -76,6 +80,7 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | --- | --- | --- | --- | --- | --- |
 | Bare Hand | 3.6 | round | ×1.0 | 1 | always there, never breaks |
 | Worn Coin | 2.4 | wedge | ×1.5 | 1 | fine edge, safe on fragile crust |
+| Sponge | 6.2 | bar | ×1.4 | 1 | widest sweep there is, but only on soft ground |
 | Scissors | 1.2 | wedge | ×1.1 | 2 | close a loop on paper-like crust to pop it out |
 | Wire Brush | 5.6 | bar | ×1.6 | 3 | wide sweep, shatters fragile loot |
 | Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian or meteorite |
