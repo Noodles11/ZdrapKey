@@ -149,11 +149,13 @@ circuits.
   arm a 5-second fuse instead. The Core Drill arms one at roughly twice the
   remaining cover. An armed mine draws straight through solid crust: a
   pulsing core and a red ring that shrinks toward it as the fuse burns down,
-  the pulse speeding up as it gets close. Hold a thumb exactly over an armed
-  mine (no thumb offset here - press precisely on it) and a green ring fills
-  in as it defuses, taking 3 uninterrupted seconds; lift your finger before
-  it completes and the ring resets to empty, fuse still burning, so you may
-  not make it back in time. A defused mine settles for good. One that isn't
+  the pulse speeding up as it gets close - and beeping in time with every
+  pulse, faster and higher-pitched the closer it gets to going off. Hold a
+  thumb exactly over an armed mine (no thumb offset here - press precisely on
+  it) and a subtle green bar near the top of the screen fills in as it
+  defuses, taking 3 uninterrupted seconds; lift your finger before it
+  completes and the bar empties, fuse still burning, so you may not make it
+  back in time. A defused mine settles for good. One that isn't
   detonates: the screen shakes, a rough-edged crater is blasted into the
   crust around it, any nearby loot is thrown outward, and the death screen
   only appears once that settles. Every un-armed mine also sits under a red
