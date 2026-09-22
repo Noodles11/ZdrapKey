@@ -49,6 +49,9 @@ tools. Chalk and Quartzite are **fragile**: dig far enough and the floor gives
 way mid-layer — a scripted fall-through that costs you the layer's remaining
 loot but not the run.
 
+Clearing enough bugs (see Collectibles) permanently folds a sixth material,
+**Swarm Nest**, into the deep cycle.
+
 ## Tools
 
 | tool | radius | shape | power | from depth | character |
@@ -59,6 +62,7 @@ loot but not the run.
 | Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian |
 | Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits |
 | Core Drill | 3.6 | round | ×6.0 | 15 | punches anything, wakes mines early |
+| Dissolving Spray | 4.4 | gradient | ×2.1 | 1 | wide, soft-edged mist — earned, never found |
 
 Tools are found buried in layers, the same way as currency. Tap the dock button
 for a radial wheel; time and input pause while it is open, and a swap changes
@@ -89,6 +93,12 @@ permanent unlock:
 | Lantern Shards | seams read one cell wider |
 | Glove Linings | the bare hand digs 60% harder |
 | Vault Keys | runs begin at depth 3 |
+
+Dirt layers can also have a handful of small, harmless bugs wandering across
+them. Tapping one clears it; leaving it alone does nothing either way — they
+are not a hazard. Kills are tallied **silently** across every run, and once
+you've cleared 20 of them you permanently earn the **Dissolving Spray** tool
+and the **Swarm Nest** material joins the deep cycle for good.
 
 ## Determinism and the self-test
 

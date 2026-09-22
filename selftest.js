@@ -118,7 +118,7 @@ for (let d = 1; d <= 400; d++) {
     const owned = { hand: true };
     let carry = 0;
     for (let d = 1; d <= DIG.C.DEPTH_CEILING; d++) {
-      const pool = DIG.TOOLS.map((t) => t.id).filter((id) => !owned[id]);
+      const pool = DIG.TOOLS.filter((t) => !t.reward).map((t) => t.id).filter((id) => !owned[id]);
       const L = DIG.genLayer(seed, d, carry, { toolPool: pool, owned });
       if (!L.isBoss) {
         const best = DIG.bestToolAtDepth(L, owned);
@@ -135,6 +135,41 @@ for (let d = 1; d <= 400; d++) {
     }
   }
   console.log(`worst realistic clear : ~${worst.seconds.toFixed(0)}s at depth ${worst.depth} with ${worst.tool}`);
+}
+
+// 7. The Swarm Nest material only appears once a run has bugsUnlocked set,
+//    so the default sweep above never generates it. Validate it directly.
+{
+  let sawBugs = false;
+  for (let s = 0; s < 100; s++) {
+    let carry = 0;
+    for (let d = 1; d <= DIG.C.DEPTH_CEILING; d++) {
+      const L = DIG.genLayer('bugs-probe-' + s, d, carry, { bugsUnlocked: true });
+      if (L.material.id === 'bugs') sawBugs = true;
+      const found = DIG.validateLayer(L);
+      if (found.length) extra.push(`bugsUnlocked depth ${d} (${L.material.name}): ${found[0]}`);
+      carry = Math.min(L.baseHardness, L.baseHardness * DIG.C.CARRY_FACTOR * 0.4);
+    }
+  }
+  if (!sawBugs) extra.push('bugsUnlocked never produced a Swarm Nest layer across 100 seeds');
+
+  // palette: Swarm Nest against whatever can sit right next to it once
+  // it joins the deep cycle
+  const VIEWS = ['normal', 'protan', 'deutan', 'tritan'];
+  const cycle = DIG.DEEP_CYCLE.concat(['bugs']);
+  const neighbours = new Set();
+  cycle.forEach((id, i) => {
+    if (id !== 'bugs') return;
+    neighbours.add(cycle[(i - 1 + cycle.length) % cycle.length]);
+    neighbours.add(cycle[(i + 1) % cycle.length]);
+  });
+  neighbours.forEach((id) => {
+    VIEWS.forEach((view) => {
+      const v = (hex) => (view === 'normal' ? hex : DIG.simulate(hex, view));
+      const d = DIG.deltaE(v(DIG.MATERIALS.bugs.color), v(DIG.MATERIALS[id].color));
+      if (d < 14) extra.push(`${view}: adjacent layers Swarm Nest vs ${DIG.MATERIALS[id].name} dE=${d.toFixed(1)}`);
+    });
+  });
 }
 
 /* --- report --- */

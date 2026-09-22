@@ -176,6 +176,7 @@
     <h2>Bank</h2>
     <div class="row"><span>Banked currency</span><span class="v" id="bankV">0</span></div>
     <div class="row"><span>Deepest layer</span><span class="v" id="bestV">0</span></div>
+    <div class="row"><span>Bugs cleared</span><span class="v" id="bugsV">0</span></div>
   </div>
 
   <div class="card">
@@ -196,7 +197,10 @@
       channel end to end instead.<br><br>
       Leftover crust you never touched is forgotten once you move on &mdash; nothing carries over unless you
       scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
-      currency. <b>Bail</b> between layers to keep everything.
+      currency. <b>Bail</b> between layers to keep everything.<br><br>
+      Dirt layers sometimes have small bugs wandering across them. Tap one to clear it, or leave it be &mdash;
+      it's not a trap either way. Clear enough of them and you'll permanently earn the
+      <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.
     </p>
   </div>
 
@@ -287,17 +291,21 @@ var DIG = (function () {
     // special
     plating:   { id:'plating',   name:'Reinforced Plating', mult:1.90, color:'#748296', grain:'#415063',
                  fragile:false, requires:['chisel','drill','probe'] },
-    vault:     { id:'vault',     name:'Vault Seal', mult:1.20, color:'#AD8A4E', grain:'#604404', fragile:false }
+    vault:     { id:'vault',     name:'Vault Seal', mult:1.20, color:'#AD8A4E', grain:'#604404', fragile:false },
+    // unlocked permanently once enough bugs have been cleared
+    bugs:      { id:'bugs',      name:'Swarm Nest', mult:1.45, color:'#763232', grain:'#351717', fragile:false }
   };
 
   var FIXED_SEQ  = ['topsoil','sand','clay','gravel','chalk','shale','sandstone','limestone'];
   var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith'];
+  var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
 
   /* ---------------- tools ---------------- */
   // radius   : removal radius in cells
-  // shape    : 'round' | 'wedge' | 'bar'  (affects the removal footprint)
+  // shape    : 'round' | 'wedge' | 'bar' | 'gradient'  (affects the removal footprint)
   // power    : multiplier over the bare hand
   // minDepth : cannot be equipped shallower than this
+  // reward   : true if only obtainable as a milestone reward, never buried
   var TOOLS = [
     { id:'hand',   name:'Bare Hand',      radius:3.6, shape:'round', power:1.0, minDepth:1,
       note:'Always available. Never breaks.' },
@@ -310,7 +318,9 @@ var DIG = (function () {
     { id:'probe',  name:'Insulated Probe',radius:2.8, shape:'round', power:2.0, minDepth:8,
       note:'Dead-shorts live circuits.' },
     { id:'drill',  name:'Core Drill',     radius:3.6, shape:'round', power:6.0, minDepth:15,
-      note:'Punches anything. Wakes mines early.' }
+      note:'Punches anything. Wakes mines early.' },
+    { id:'spray',  name:'Dissolving Spray', radius:4.4, shape:'gradient', power:2.1, minDepth:1,
+      reward:true, note:'A wide, soft-edged mist. Earned, never found.' }
   ];
   var TOOL_BY_ID = {};
   TOOLS.forEach(function (t) { TOOL_BY_ID[t.id] = t; });
@@ -385,7 +395,10 @@ var DIG = (function () {
   function isBossDepth(depth) { return depth % C.BOSS_INTERVAL === 0 && depth !== C.DEPTH_CEILING; }
   function isVaultDepth(depth) { return depth === C.DEPTH_CEILING; }
 
-  function materialForDepth(depth) {
+  // bugsUnlocked folds the Swarm Nest material into the deep cycle once its
+  // reward has been earned; omitted (or false) it never appears, so every
+  // existing caller that only passes depth keeps its original behaviour.
+  function materialForDepth(depth, bugsUnlocked) {
     if (isVaultDepth(depth)) return MATERIALS.vault;
     if (isBossDepth(depth)) return MATERIALS.plating;
     if (depth <= FIXED_SEQ.length) return MATERIALS[FIXED_SEQ[depth - 1]];
@@ -394,7 +407,8 @@ var DIG = (function () {
     var bossesPast = Math.floor(depth / C.BOSS_INTERVAL);
     var idx = (past - bossesPast - 1);
     if (idx < 0) idx = 0;
-    return MATERIALS[DEEP_CYCLE[idx % DEEP_CYCLE.length]];
+    var cycle = bugsUnlocked ? DEEP_CYCLE_BUGS : DEEP_CYCLE;
+    return MATERIALS[cycle[idx % cycle.length]];
   }
 
   function deepCycleIndex(depth) {
@@ -403,8 +417,8 @@ var DIG = (function () {
   }
 
   // Asymptotic: approaches HMAX * mult * deepBoostMax and never exceeds it.
-  function hardnessForDepth(depth) {
-    var mat = materialForDepth(depth);
+  function hardnessForDepth(depth, bugsUnlocked) {
+    var mat = materialForDepth(depth, bugsUnlocked);
     var base = 1 + (C.HMAX - 1) * (1 - Math.exp(-(depth - 1) / 16));
     var cyc = deepCycleIndex(depth);
     var deepBoost = 1 + 0.35 * (1 - Math.exp(-cyc / 3.2));
@@ -519,10 +533,10 @@ var DIG = (function () {
   function genLayer(seed, depth, carry, ctx) {
     ctx = ctx || {};
     var rng = rngFor(seed, depth, 'layer');
-    var mat = materialForDepth(depth);
+    var mat = materialForDepth(depth, ctx.bugsUnlocked);
     var boss = isBossDepth(depth);
     var vault = isVaultDepth(depth);
-    var baseHard = hardnessForDepth(depth);
+    var baseHard = hardnessForDepth(depth, ctx.bugsUnlocked);
     var carryCapped = Math.max(0, Math.min(baseHard, carry || 0));   // total <= 2x base
 
     var layer = {
@@ -631,7 +645,7 @@ var DIG = (function () {
     // holds the tool for it, so make sure one is buried here.
     var gate = null;
     for (var gd = depth; gd <= depth + 3; gd++) {
-      var gm = materialForDepth(gd);
+      var gm = materialForDepth(gd, ctx.bugsUnlocked);
       if (gm.requires) { gate = gm.requires; break; }
     }
     if (gate && ctx.owned) {
@@ -642,10 +656,12 @@ var DIG = (function () {
       }
     }
 
+    // reward tools (e.g. the Dissolving Spray) are earned, never buried,
+    // regardless of what a caller passes as the pool
     var lockedTools = (ctx.toolPool || TOOLS.map(function (t) { return t.id; }))
       .filter(function (id) {
         var t = TOOL_BY_ID[id];
-        return t && t.id !== 'hand' && depth >= t.minDepth;
+        return t && !t.reward && t.id !== 'hand' && depth >= t.minDepth;
       });
     var alreadyGiving = wanted.some(function (w) { return w.kind === 'tool'; });
     if (!alreadyGiving && lockedTools.length && irng() < 0.16 + Math.min(0.14, depth * 0.004)) {
@@ -973,10 +989,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   var STORE_KEY = 'deepdig.profile.v1';
   var profile = load();
 
+  var BUG_KILL_GOAL = 20;
+
   function blankProfile() {
     var frags = {};
     DIG.SETS.forEach(function (s) { frags[s.id] = new Array(s.size).fill(false); });
-    return { bank: 0, best: 0, tools: [], frags: frags, runs: 0 };
+    return { bank: 0, best: 0, tools: [], frags: frags, runs: 0, bugsKilled: 0 };
   }
   function load() {
     try {
@@ -984,6 +1002,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (!raw) return blankProfile();
       var p = JSON.parse(raw), b = blankProfile();
       b.bank = p.bank | 0; b.best = p.best | 0; b.runs = p.runs | 0;
+      b.bugsKilled = p.bugsKilled | 0;
       b.tools = Array.isArray(p.tools) ? p.tools.filter(function (t) { return DIG.TOOL_BY_ID[t]; }) : [];
       DIG.SETS.forEach(function (s) {
         var src = (p.frags && p.frags[s.id]) || [];
@@ -1002,6 +1021,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var p = {};
     DIG.SETS.forEach(function (s) { if (setComplete(s.id)) p[s.bonus] = true; });
     return p;
+  }
+  function bugsUnlocked() { return profile.tools.indexOf('spray') >= 0; }
+
+  function killBug(b) {
+    b.alive = false;
+    var p = toPx(b.x, b.y);
+    burst(p, b.back, 14, 2);
+    buzz(10);
+    profile.bugsKilled++;
+    if (!bugsUnlocked() && profile.bugsKilled >= BUG_KILL_GOAL) {
+      profile.tools.push('spray');
+      banner('DISSOLVING SPRAY UNLOCKED');
+      buzz([20, 40, 20, 60]);
+      buildWheel();
+    }
+    save();
   }
 
   /* ---------------------------------------------------------------- canvas */
@@ -1081,7 +1116,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function loadLayer(depth) {
     var owned = ownedTools();
     var pool = DIG.TOOLS.map(function (t) { return t.id; }).filter(function (id) { return !owned[id]; });
-    run.layer = DIG.genLayer(run.seed, depth, run.carry, { toolPool: pool, owned: owned });
+    run.layer = DIG.genLayer(run.seed, depth, run.carry, { toolPool: pool, owned: owned, bugsUnlocked: bugsUnlocked() });
     run.integrity = new Float32Array(GW * GH).fill(1);
     run.removed = 0;
     run.collapsing = 0;
@@ -1096,10 +1131,47 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     paintMaterial();
     updateHud();
     var L = run.layer;
+    // small, harmless critters only turn up on ordinary dirt; tapping one is
+    // entirely optional, so they are seeded fresh every time and never saved
+    run.bugs = L.material.id === 'topsoil' ? spawnBugs() : [];
     // the material name is imprinted on the crust itself now, so only layers
     // with something extra to say (vault, boss) still get a banner
     if (L.isVault) banner('THE VAULT');
     else if (L.isBoss) banner('REINFORCED · TRACE THE CHANNEL');
+  }
+
+  function spawnBugs() {
+    var n = 5 + Math.floor(Math.random() * 4);
+    var bugs = [];
+    for (var i = 0; i < n; i++) {
+      var hue = Math.floor(Math.random() * 360);
+      bugs.push({
+        x: 6 + Math.random() * (GW - 12),
+        y: 6 + Math.random() * (GH - 12),
+        a: Math.random() * 6.2832,
+        speed: 3 + Math.random() * 4,
+        r: 0.5 + Math.random() * 0.25,
+        back: 'hsl(' + hue + ',72%,58%)',
+        spot: 'hsl(' + ((hue + 180) % 360) + ',80%,28%)',
+        alive: true
+      });
+    }
+    return bugs;
+  }
+
+  // gentle random wander, bouncing off the play field's edges
+  function stepBugs(dt) {
+    var bugs = run.bugs, margin = C.SEP.EDGE * 0.6;
+    for (var i = 0; i < bugs.length; i++) {
+      var b = bugs[i];
+      if (!b.alive) continue;
+      b.a += (Math.random() - 0.5) * 2.6 * dt;
+      var nx = b.x + Math.cos(b.a) * b.speed * dt;
+      var ny = b.y + Math.sin(b.a) * b.speed * dt;
+      if (nx < margin || nx > GW - margin) { b.a = Math.PI - b.a; nx = b.x; }
+      if (ny < margin || ny > GH - margin) { b.a = -b.a; ny = b.y; }
+      b.x = nx; b.y = ny;
+    }
   }
 
   /* ------------------------------------------------------------ material */
@@ -1111,14 +1183,32 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     // deterministic grain so a layer always looks the same for a given seed
     var rng = DIG.rngFor(run.seed, run.layer.depth, 'grain');
-    var n = Math.round((w * h) / 320);
-    matCtx.fillStyle = m.grain;
-    for (var i = 0; i < n; i++) {
-      var x = rng() * w, y = rng() * h, s = 1 + rng() * 3.2;
-      matCtx.globalAlpha = 0.10 + rng() * 0.22;
-      matCtx.fillRect(x, y, s, s * (0.5 + rng()));
+    if (m.id === 'bugs') {
+      // the crust itself reads as a mass of tiny bugs, not plain rock texture;
+      // swiping through it scratches the swarm away like any other material
+      var bn = Math.round((w * h) / 260);
+      for (var bi = 0; bi < bn; bi++) {
+        var bx2 = rng() * w, by2 = rng() * h, br = 1.6 + rng() * 2.6;
+        var bhue = Math.floor(rng() * 360);
+        matCtx.save();
+        matCtx.translate(bx2, by2);
+        matCtx.rotate(rng() * 6.2832);
+        matCtx.globalAlpha = 0.55 + rng() * 0.35;
+        matCtx.fillStyle = 'hsl(' + bhue + ',60%,' + Math.round(30 + rng() * 20) + '%)';
+        matCtx.beginPath(); matCtx.ellipse(0, 0, br, br * 0.6, 0, 0, 6.2832); matCtx.fill();
+        matCtx.restore();
+      }
+      matCtx.globalAlpha = 1;
+    } else {
+      var n = Math.round((w * h) / 320);
+      matCtx.fillStyle = m.grain;
+      for (var i = 0; i < n; i++) {
+        var x = rng() * w, y = rng() * h, s = 1 + rng() * 3.2;
+        matCtx.globalAlpha = 0.10 + rng() * 0.22;
+        matCtx.fillRect(x, y, s, s * (0.5 + rng()));
+      }
+      matCtx.globalAlpha = 1;
     }
-    matCtx.globalAlpha = 1;
 
     if (run.layer.isBoss || run.layer.isVault) {
       matCtx.strokeStyle = 'rgba(255,255,255,.10)';
@@ -1166,21 +1256,26 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     return run.integrity[y * GW + x];
   }
 
-  var SHAPE = { round: [1, 1], wedge: [1.5, 0.62], bar: [0.45, 1.75] };
+  var SHAPE = { round: [1, 1], wedge: [1.5, 0.62], bar: [0.45, 1.75], gradient: [1, 1] };
+  // fraction of the radius that stays at full power before tapering off;
+  // the spray tapers from the very center for a much softer, misty edge
+  var SOFT_START = { gradient: 0.08 };
 
   // soft-edged weight of one cell inside the tool footprint, 0 outside
-  function falloff(x, y, px, py, ca, sa, sh, R) {
+  function falloff(x, y, px, py, ca, sa, sh, R, soft) {
     var dx = (x + 0.5) - px, dy = (y + 0.5) - py;
     var u = (dx * ca - dy * sa) / sh[0];
     var v = (dx * sa + dy * ca) / sh[1];
     var d = Math.sqrt(u * u + v * v) / R;
     if (d >= 1) return 0;
-    var f = d <= 0.45 ? 1 : 1 - (d - 0.45) / 0.55;
+    var s = soft == null ? 0.45 : soft;
+    var f = d <= s ? 1 : 1 - (d - s) / (1 - s);
     return f * f * (3 - 2 * f);
   }
 
   function removeAt(px, py, amt, R, shape, ang) {
     var sh = SHAPE[shape] || SHAPE.round;
+    var soft = SOFT_START[shape];
     var ca = Math.cos(-ang), sa = Math.sin(-ang);
     var reach = R * Math.max(sh[0], sh[1]) + 1;
     var x0 = Math.max(0, Math.floor(px - reach)), x1 = Math.min(GW - 1, Math.ceil(px + reach));
@@ -1191,7 +1286,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var full = 0, contact = 0, x, y, f;
     for (y = y0; y <= y1; y++) {
       for (x = x0; x <= x1; x++) {
-        f = falloff(x, y, px, py, ca, sa, sh, R);
+        f = falloff(x, y, px, py, ca, sa, sh, R, soft);
         if (f <= 0) continue;
         full += f;
         if (run.integrity[y * GW + x] > 0) contact += f;
@@ -1203,7 +1298,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var removed = 0;
     for (y = y0; y <= y1; y++) {
       for (x = x0; x <= x1; x++) {
-        f = falloff(x, y, px, py, ca, sa, sh, R);
+        f = falloff(x, y, px, py, ca, sa, sh, R, soft);
         if (f <= 0) continue;
         var i = y * GW + x, cur = run.integrity[i];
         if (cur <= 0) continue;
@@ -1637,6 +1732,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
   }
 
+  // Bugs wander on top of the crust, not buried under it, so they draw over
+  // the finished dig canvas instead of through updateMask()'s reveal mask.
+  function drawBugs() {
+    var bugs = run.bugs;
+    if (!bugs || !bugs.length) return;
+    var cell = view.cell;
+    for (var i = 0; i < bugs.length; i++) {
+      var b = bugs[i];
+      if (!b.alive) continue;
+      var p = toPx(b.x, b.y), r = cell * b.r * 2.2;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(b.a);
+      ctx.fillStyle = '#15140f';
+      ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.68, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = b.back;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.8, r * 0.48, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = b.spot;
+      ctx.beginPath(); ctx.arc(-r * 0.32, 0, r * 0.16, 0, 6.2832); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.32, 0, r * 0.16, 0, 6.2832); ctx.fill();
+      ctx.restore();
+    }
+  }
+
   // Crust coverage as an alpha map. The curve keeps thinned-but-present crust
   // looking solid and makes the lip of a hole read as an edge rather than a
   // smear once the mask is scaled up.
@@ -1701,6 +1820,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     tmpCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
 
+    drawBugs();
+
     // particles + floaters
     for (var i = 0; i < fx.length; i++) {
       var f = fx[i], k2 = 1 - f.t / f.life;
@@ -1764,6 +1885,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         if (run.interT > 1.7) descend();
       }
       if (run.collapsing) run.collapsing = Math.min(1, run.collapsing + dt);
+      if (phase === 'dig' && run.bugs && run.bugs.length && !wheelOpen) stepBugs(dt);
       stepFx(dt);
       render();
     }
@@ -1788,14 +1910,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   /* ------------------------------------------------------------ tool wheel */
   function toolGlyph(id, size) {
-    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7' }[id];
+    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7', spray:'#56B4E9' }[id];
     var body = {
       hand:  '<path d="M10 22V11a2 2 0 014 0v6m0-6V9a2 2 0 014 0v8m0-6a2 2 0 014 0v10a6 6 0 01-6 6h-4a6 6 0 01-6-6v-3"/>',
       coin:  '<circle cx="16" cy="16" r="9"/><circle cx="16" cy="16" r="4"/>',
       brush: '<path d="M6 9h20v6H6z"/><path d="M9 15v8M13 15v8M17 15v8M21 15v8M25 15v6"/>',
       chisel:'<path d="M13 4h6v14l-3 10-3-10z"/>',
       probe: '<path d="M16 3v16"/><circle cx="16" cy="24" r="5"/>',
-      drill: '<path d="M8 8h12v8H8z"/><path d="M20 10h5v4h-5z"/><path d="M12 16v10"/>'
+      drill: '<path d="M8 8h12v8H8z"/><path d="M20 10h5v4h-5z"/><path d="M12 16v10"/>',
+      spray: '<circle cx="16" cy="18" r="4"/><circle cx="16" cy="18" r="9" stroke-dasharray="3 4"/>' +
+             '<circle cx="16" cy="18" r="13" stroke-dasharray="2 6"/>'
     }[id];
     return '<svg viewBox="0 0 32 32" width="' + (size || 30) + '" height="' + (size || 30) +
       '" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -1866,6 +1990,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if (phase !== 'dig' || wheelOpen) return;
     ev.preventDefault();
     var p = local(ev);
+    if (run.bugs && run.bugs.length) {
+      for (var bi = 0; bi < run.bugs.length; bi++) {
+        var b = run.bugs[bi];
+        if (!b.alive) continue;
+        var bp = toPx(b.x, b.y);
+        if (DIG.dist(p.x, p.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
+      }
+    }
     if (run.seamRevealed) {
       var sp = toPx(run.layer.target.x, run.layer.target.y);
       if (DIG.dist(p.x, p.y, sp.x, sp.y) <= view.cell * 3.2) { clearLayer('seam'); return; }
@@ -1900,6 +2032,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function renderTitle() {
     $('bankV').textContent = profile.bank;
     $('bestV').textContent = profile.best;
+    $('bugsV').textContent = bugsUnlocked() ? profile.bugsKilled + ' ✓' :
+      profile.bugsKilled + ' / ' + BUG_KILL_GOAL;
     var inv = $('invList');
     inv.innerHTML = '';
     DIG.TOOLS.forEach(function (t) {
