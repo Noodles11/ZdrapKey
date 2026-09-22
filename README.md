@@ -75,7 +75,7 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | --- | --- | --- | --- | --- | --- |
 | Bare Hand | 3.6 | round | ×1.0 | 1 | always there, never breaks |
 | Worn Coin | 2.4 | wedge | ×1.5 | 1 | fine edge, safe on fragile crust |
-| Scissors | 1.2 | wedge | ×1.1 | 2 | close a loop to pop out everything inside |
+| Scissors | 1.2 | wedge | ×1.1 | 2 | close a loop on paper-like crust to pop it out |
 | Wire Brush | 5.6 | bar | ×1.6 | 3 | wide sweep, shatters fragile loot |
 | Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian |
 | Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits, pings nearby mines |
@@ -92,13 +92,11 @@ within three layers of the gate, so a descent can never dead-end.
 ### Cutting a loop with scissors
 
 Drag with the scissors equipped and it cuts a thin line, same as any other
-tool. But close that line into a loop — bring it back near where it started —
-and the whole interior pops out instantly, integrity and all, whatever
-material it's cut from. Cardboard, Topsoil, Sand and Clay are soft enough that
-whatever coins, fragments or tools were inside the loop are collected as
-normal. Every other material is too hard to cut cleanly by hand: the interior
-still clears, but any loot inside is lost, and a mine or live circuit caught
-inside the loop reacts exactly as if you'd uncovered it with any other tool.
+tool. On paper-like crust — Cardboard, so far — closing that line into a loop
+pops the whole interior out instantly, integrity and loot alike; a mine or
+live circuit caught inside reacts exactly as if you'd uncovered it with any
+other tool. On every other material the loop trick simply doesn't work: the
+scissors just cut their usual thin line, nothing more.
 
 ## Hazards
 

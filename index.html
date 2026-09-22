@@ -226,13 +226,13 @@
       it while thin only ends the run if it's currently energized. A hidden <b>off-switch</b> is buried
       somewhere on every layer with a circuit &mdash; dig it up and hold your thumb exactly on it for 3 seconds
       to permanently kill every circuit on the layer.<br><br>
-      Dirt layers sometimes have small bugs wandering across them. Tap one to clear it, or leave it be &mdash;
+      Natural ground &mdash; Topsoil, Sand, Clay, Gravel &mdash; sometimes hides small bugs, buried under the
+      crust like any other signal, only showing where you've dug. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
       <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.<br><br>
-      <b>Scissors</b> cut a thin line like any tool, but close the line into a loop and the whole
-      inside pops out instantly. Cardboard, Topsoil, Sand and Clay are soft enough to keep whatever
-      loot was inside; cut a loop through anything harder and the clear still happens, but the loot
-      inside is lost.<br><br>
+      <b>Scissors</b> cut a thin line like any tool. On paper-like crust &mdash; Cardboard, so far &mdash;
+      closing that line into a loop pops the whole inside out instantly, loot included. On anything else
+      the loop trick just doesn't work: they're a plain blade there.<br><br>
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
@@ -304,17 +304,18 @@ var DIG = (function () {
   };
 
   /* ---------------- materials ---------------- */
-  // mult        : hardness multiplier
-  // fragile     : layer can collapse mid-dig, and wide/blunt tools shatter its loot
-  // requires    : if set, only these tools make real progress
-  // scissorSafe : cutting a closed loop here with scissors keeps whatever loot
-  //               was inside it; everywhere else the loot is forfeited
+  // mult      : hardness multiplier
+  // fragile   : layer can collapse mid-dig, and wide/blunt tools shatter its loot
+  // requires  : if set, only these tools make real progress
+  // paperLike : scissors can close a loop here for the instant-clear effect;
+  //             on every other material scissors are just a plain blade
+  // natural   : loose, undeveloped ground bugs can burrow under
   var MATERIALS = {
-    topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, scissorSafe:true },
-    cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, scissorSafe:true },
-    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false, scissorSafe:true },
-    clay:      { id:'clay',      name:'Clay',       mult:0.90, color:'#B6624E', grain:'#813120', fragile:false, scissorSafe:true },
-    gravel:    { id:'gravel',    name:'Gravel',     mult:1.05, color:'#8A9397', grain:'#515A5D', fragile:false },
+    topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true },
+    cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true },
+    sand:      { id:'sand',      name:'Sand',       mult:0.70, color:'#DFAF51', grain:'#654300', fragile:false, natural:true },
+    clay:      { id:'clay',      name:'Clay',       mult:0.90, color:'#B6624E', grain:'#813120', fragile:false, natural:true },
+    gravel:    { id:'gravel',    name:'Gravel',     mult:1.05, color:'#8A9397', grain:'#515A5D', fragile:false, natural:true },
     chalk:     { id:'chalk',     name:'Chalk',      mult:0.95, color:'#57534C', grain:'#38342D', fragile:true  },
     shale:     { id:'shale',     name:'Shale',      mult:1.25, color:'#737679', grain:'#46494B', fragile:false },
     sandstone: { id:'sandstone', name:'Sandstone',  mult:1.35, color:'#C98F4E', grain:'#6F4000', fragile:false },
@@ -353,7 +354,7 @@ var DIG = (function () {
     { id:'coin',   name:'Worn Coin',      radius:2.4, shape:'wedge', power:1.5, minDepth:1,
       note:'Fine edge. Safe on fragile crust.' },
     { id:'scissors', name:'Scissors',     radius:1.2, shape:'wedge', power:1.1, minDepth:2,
-      canCut:true, note:'Close a loop to pop out everything inside.' },
+      canCut:true, note:'Close a loop on paper-like crust to pop it out. A plain blade elsewhere.' },
     { id:'brush',  name:'Wire Brush',     radius:5.6, shape:'bar',   power:1.6, minDepth:3,
       note:'Wide sweep. Shatters fragile loot.' },
     { id:'chisel', name:'Cold Chisel',    radius:2.8, shape:'wedge', power:3.2, minDepth:5,
@@ -1203,6 +1204,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.collapsing = 0;
     run.bossProgress = 0;
     run.warned = false;
+    run.warnedScissors = false;
     run.seamRevealed = false;
     run.detectTimer = 0;
     run.detectPulse = 0;
@@ -1214,9 +1216,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     paintMaterial();
     updateHud();
     var L = run.layer;
-    // small, harmless critters only turn up on ordinary dirt; tapping one is
-    // entirely optional, so they are seeded fresh every time and never saved
-    run.bugs = L.material.id === 'topsoil' ? spawnBugs() : [];
+    // small, harmless critters only burrow under natural ground; tapping one
+    // is entirely optional, so they are seeded fresh every time and never saved
+    run.bugs = L.material.natural ? spawnBugs() : [];
     // each live circuit starts its energized/dormant cycle already offset
     // from the others, so a layer's wires never all flicker in lockstep
     L.hazards.forEach(function (hz) {
@@ -1547,6 +1549,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       floatText({ x: input.x, y: input.y }, 'WRONG TOOL', '#ff9b6a');
       buzz([8, 40, 8]);
     }
+    if (!run.warnedScissors && tool.canCut && !L.material.paperLike) {
+      run.warnedScissors = true;
+      banner('SCISSORS NEED PAPER-LIKE CRUST');
+      floatText({ x: input.x, y: input.y }, 'NO LOOP EFFECT HERE', '#ff9b6a');
+    }
     var a = toCell(input.lx, input.ly), b = toCell(input.x, input.y);
     var dx = b.x - a.x, dy = b.y - a.y;
     var len = Math.sqrt(dx * dx + dy * dy);
@@ -1563,7 +1570,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var p = toPx(b.x, b.y);
       spark(p.x, p.y, L.material.grain, 1 + Math.random() * 2);
     }
-    if (tool.canCut) trackCut(b);
+    if (tool.canCut && L.material.paperLike) trackCut(b);
     if (phase === 'dig') checkWorld(b);
   }
 
@@ -1632,22 +1639,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     run.removed += removed;
 
-    var safe = !!L.material.scissorSafe;
+    // this only ever runs on paper-like crust (see applyStroke), so a loop
+    // always cleanly pops out whatever loot was inside it
     L.items.forEach(function (it) {
-      // the off-switch is held, never collected or forfeited by a cut - it's
-      // simply left findable, same as before the crust around it opened up
+      // the off-switch is held, never auto-collected by a cut - it's simply
+      // left findable, same as before the crust around it opened up
       if (it.taken || it.kind === 'switch' || !pointInPoly(it.x, it.y, poly)) return;
-      if (safe) { collect(it); return; }
-      it.taken = true;
-      burst(toPx(it.x, it.y), '#6b6b6b', 8);
-      floatText(toPx(it.x, it.y), 'LOST', '#8a8f96');
+      collect(it);
     });
 
     updateHud();
     buzz(20);
-    banner(safe ? 'CLEAN CUT' : 'ROUGH CUT · LOOT LOST');
+    banner('CLEAN CUT');
     var cp = toPx((minX + maxX) / 2, (minY + maxY) / 2);
-    burst(cp, safe ? '#ffffff' : '#8a8f96', 26, 3);
+    burst(cp, '#ffffff', 26, 3);
 
     // a mine inside the cut arms exactly as if you'd uncovered it by hand
     for (i = 0; i < L.hazards.length; i++) {
@@ -2269,10 +2274,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.closePath(); ctx.fill();
       ctx.restore();
     }
+
+    drawBugs();
   }
 
-  // Bugs wander on top of the crust, not buried under it, so they draw over
-  // the finished dig canvas instead of through updateMask()'s reveal mask.
+  // Bugs are buried under the crust like any other signal: this draws into
+  // the same buffer drawBuried() does, before the crust mask composites over
+  // it, so a bug only shows through where the ground above it is dug thin.
   function drawBugs() {
     var bugs = run.bugs;
     if (!bugs || !bugs.length) return;
@@ -2358,8 +2366,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     tmpCtx.drawImage(maskCv, 0, 0, view.w, view.h);
     tmpCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
-
-    drawBugs();
 
     drawCircuits();
 
@@ -2611,9 +2617,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     ev.preventDefault();
     var raw = rawPoint(ev);
     if (run.bugs && run.bugs.length) {
+      var bugReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
       for (var bi = 0; bi < run.bugs.length; bi++) {
         var b = run.bugs[bi];
-        if (!b.alive) continue;
+        if (!b.alive || integrityAt(b.x, b.y) > bugReveal) continue; // hidden below the mask
         var bp = toPx(b.x, b.y);
         if (DIG.dist(raw.x, raw.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
       }
