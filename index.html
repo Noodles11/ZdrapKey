@@ -77,7 +77,11 @@
     transition:transform .18s cubic-bezier(.2,.9,.3,1.4),border-color .2s;
   }
   #toolBtn:active{transform:scale(.94)}
-  #toolBtn .glyph{width:30px;height:30px;flex:0 0 auto}
+  #toolBtn .glyphWrap{position:relative;width:30px;height:30px;flex:0 0 auto}
+  #toolBtn .glyph{width:30px;height:30px}
+  #toolCountChip{position:absolute;right:-6px;bottom:-6px;min-width:16px;height:16px;padding:0 3px;
+    border-radius:999px;background:var(--accent);color:#1a1a05;font:800 10px ui-monospace,Menlo,monospace;
+    display:flex;align-items:center;justify-content:center;line-height:1}
   #toolBtn .tt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.1}
   #toolBtn .tt b{font-size:13px}
   #toolBtn .tt span{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
@@ -99,7 +103,6 @@
   }
   .slot small{font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);text-align:center;padding:0 4px}
   .slot.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(240,228,66,.22) inset}
-  .slot.locked{opacity:.34}
   .slot:active{transform:scale(.9)}
   @keyframes slotIn{to{opacity:1;transform:scale(1)}}
   @keyframes fade{from{opacity:0}to{opacity:1}}
@@ -171,13 +174,16 @@
 
   <div id="dock">
     <button id="toolBtn">
-      <svg class="glyph" id="toolGlyph" viewBox="0 0 32 32"></svg>
-      <span class="tt"><b id="toolName">Bare Hand</b><span>Tap to swap</span></span>
+      <span class="glyphWrap">
+        <svg class="glyph" id="toolGlyph" viewBox="0 0 32 32"></svg>
+        <span id="toolCountChip" style="display:none"></span>
+      </span>
+      <span class="tt"><b id="toolName">Bare Hand</b><span>Tap to combine</span></span>
     </button>
   </div>
 </div>
 
-<div id="wheel"><div class="hub" id="hub"></div><div class="hint">Time paused &middot; pick a tool</div></div>
+<div id="wheel"><div class="hub" id="hub"></div><div class="hint">Time paused &middot; tap to combine, tap outside when done</div></div>
 
 <!-- ============ TITLE / BANK ============ -->
 <div class="screen on" id="scTitle">
@@ -213,6 +219,11 @@
       Drag to scratch. Every layer hides <b>one seam</b> &mdash; expose it, then tap the star
       to break the layer regardless of what's left. Every 10th layer is <b>reinforced</b>: trace the hidden
       channel end to end instead.<br><br>
+      The tool wheel only ever shows what you can actually carry this run. Tapping a tool toggles it
+      &mdash; carry several at once and their effects multiply into one blended tool, named as a portmanteau
+      of every component (Chisel + Drill + Probe &rarr; "Chidriobe") with a chip counting how many are
+      stacked. Any special ability or quirk any one of them has applies to the whole combo. Picking the
+      Bare Hand always clears the combo; picking a real tool always drops the hand first.<br><br>
       Leftover crust you never touched is forgotten once you move on &mdash; nothing carries over unless you
       scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
       currency. <b>Bail</b> between layers to keep everything. Every mine hides under a red warning aura wider
@@ -1161,7 +1172,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       time: 0,
       tools: [],          // found this run (lost on death)
       frags: [],          // {setId,index}
-      tool: 'hand',
+      equipped: ['hand'],
       perks: p,
       layer: null,
       integrity: null,
@@ -1189,6 +1200,88 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     return set;
   }
 
+  /* ------------------------------------------------------- tool combos */
+  // several tools can be carried at once; their effects multiply together
+  // into one synthetic combo tool, portmanteau name and all
+  function hasTool(id) { return run.equipped.indexOf(id) >= 0; }
+
+  function toolBaseWord(id) {
+    var words = DIG.TOOL_BY_ID[id].name.split(' ');
+    return words[words.length - 1];
+  }
+
+  // e.g. ['Chisel','Rake','Sponge'] -> 'chirange': every word but the last
+  // gives up its front half, the last word gives up its back half
+  function portmanteau(words) {
+    var n = words.length;
+    return words.map(function (w, i) {
+      w = w.toLowerCase();
+      if (i === n - 1) return w.slice(Math.floor(w.length / 2));
+      return w.slice(0, Math.ceil(w.length / 2));
+    }).join('');
+  }
+
+  function comboName(ids) {
+    if (ids.length === 1) return DIG.TOOL_BY_ID[ids[0]].name;
+    var blended = portmanteau(ids.map(toolBaseWord));
+    return blended.charAt(0).toUpperCase() + blended.slice(1);
+  }
+
+  function comboPower(ids) {
+    var p = 1;
+    ids.forEach(function (id) {
+      var tp = DIG.TOOL_BY_ID[id].power;
+      if (id === 'hand' && run.perks.handPower) tp *= 1.6;
+      p *= tp;
+    });
+    return p;
+  }
+
+  function comboRadius(ids) {
+    var sum = 0;
+    ids.forEach(function (id) { sum += DIG.TOOL_BY_ID[id].radius; });
+    return sum / ids.length;
+  }
+
+  // the stroke's footprint shape follows whichever component tool hits hardest
+  function comboShape(ids) {
+    var best = null, bestPower = -1;
+    ids.forEach(function (id) {
+      var t = DIG.TOOL_BY_ID[id];
+      if (t.power > bestPower) { bestPower = t.power; best = t.shape; }
+    });
+    return best;
+  }
+
+  function comboAffinity(material) {
+    var best = 0;
+    run.equipped.forEach(function (id) { best = Math.max(best, DIG.toolAffinity(id, material)); });
+    return best;
+  }
+
+  function comboDigRate() {
+    var L = run.layer;
+    return C.BASE_RATE * comboPower(run.equipped) * comboAffinity(L.material) / L.hardness;
+  }
+
+  // the single equipped tool, or a synthetic blend of everything carried at
+  // once; any ability (canCut, detectsHazards) or quirk any component has
+  // transfers to the whole combo
+  function activeTool() {
+    var ids = run.equipped;
+    if (ids.length === 1) return DIG.TOOL_BY_ID[ids[0]];
+    return {
+      id: 'combo',
+      name: comboName(ids),
+      radius: comboRadius(ids),
+      shape: comboShape(ids),
+      power: comboPower(ids),
+      canCut: ids.some(function (id) { return !!DIG.TOOL_BY_ID[id].canCut; }),
+      detectsHazards: ids.some(function (id) { return !!DIG.TOOL_BY_ID[id].detectsHazards; }),
+      note: ids.map(function (id) { return DIG.TOOL_BY_ID[id].name; }).join(' + ')
+    };
+  }
+
   function addCoins(v) {
     var added = Math.round(v * run.coinMult);
     run.coins += added;
@@ -1210,9 +1303,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.detectPulse = 0;
     run.cutPath = [];
     input.hasLast = false;
-    // a tool that can no longer be equipped at this depth falls back to the hand
-    var t = DIG.TOOL_BY_ID[run.tool];
-    if (!t || depth < t.minDepth || !ownedTools()[run.tool]) run.tool = 'hand';
+    // any equipped tool that can no longer be carried at this depth drops
+    // out of the combo; falls back to the bare hand if that empties it
+    run.equipped = run.equipped.filter(function (id) {
+      var t = DIG.TOOL_BY_ID[id];
+      return t && depth >= t.minDepth && owned[id];
+    });
+    if (!run.equipped.length) run.equipped = ['hand'];
     paintMaterial();
     updateHud();
     var L = run.layer;
@@ -1271,8 +1368,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   // showing mine auras through solid crust for DETECT_FADE seconds
   var DETECT_INTERVAL = 5, DETECT_FADE = 1.2;
   function stepDetection(dt) {
-    var tool = DIG.TOOL_BY_ID[run.tool];
-    if (tool && tool.detectsHazards) {
+    if (activeTool().detectsHazards) {
       run.detectTimer += dt;
       if (run.detectTimer >= DETECT_INTERVAL) { run.detectTimer = 0; run.detectPulse = 1; }
     }
@@ -1538,12 +1634,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function clearedFraction() { return run.removed / (GW * GH); }
 
   function applyStroke(dt) {
-    var L = run.layer, tool = DIG.TOOL_BY_ID[run.tool];
-    var rate = DIG.digRate(run.tool, L, run.perks);
+    var L = run.layer, tool = activeTool();
+    var rate = comboDigRate();
 
     // Scratching at something the tool cannot bite would otherwise look like
     // the game had stopped responding, so say so once per layer.
-    if (!run.warned && DIG.toolAffinity(run.tool, L.material) < 0.2) {
+    if (!run.warned && comboAffinity(L.material) < 0.2) {
       run.warned = true;
       banner(L.material.name.toUpperCase() + ' SHRUGS OFF THE ' + tool.name.toUpperCase());
       floatText({ x: input.x, y: input.y }, 'WRONG TOOL', '#ff9b6a');
@@ -1664,7 +1760,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (cz.kind !== 'circuit' || !cz.live || !cz.zapOn) continue;
       var hit = polyCrossesWire(poly, cz.points);
       if (hit) {
-        if (run.tool === 'probe') {
+        if (hasTool('probe')) {
           cz.live = false;
           addCoins(12);
           banner('CIRCUIT SHORTED');
@@ -1694,7 +1790,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     for (i = 0; i < L.hazards.length; i++) {
       var hz = L.hazards[i];
       if (hz.kind !== 'mine' || hz.dead || hz.settled || hz.fuseStarted) continue;
-      var trip = run.tool === 'drill' ? C.MINE_TRIGGER_LOUD : C.MINE_TRIGGER;
+      var trip = hasTool('drill') ? C.MINE_TRIGGER_LOUD : C.MINE_TRIGGER;
       if (integrityAt(hz.x, hz.y) <= trip) armMine(hz);
     }
 
@@ -1707,7 +1803,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         var d = DIG.polyDist(cur.x, cur.y, cz.points);
         if (d > C.CIRCUIT_CORRIDOR) continue;
         if (integrityAt(cur.x, cur.y) > 0.72) continue;
-        if (run.tool === 'probe') {
+        if (hasTool('probe')) {
           cz.live = false;
           addCoins(12);
           banner('CIRCUIT SHORTED');
@@ -1743,7 +1839,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     it.taken = true;
     var p = toPx(it.x, it.y);
     if (it.kind === 'coin') {
-      var fragileLoss = run.layer.fragile && run.tool === 'brush';
+      var fragileLoss = run.layer.fragile && hasTool('brush');
       if (fragileLoss) {
         burst(p, '#6b6b6b', 10);
         floatText(p, 'SHATTERED', '#8a8f96');
@@ -2370,7 +2466,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     drawCircuits();
 
     // the scissors' in-progress lasso, so the player can see the loop forming
-    if (run.tool === 'scissors' && run.cutPath.length) {
+    if (activeTool().canCut && run.cutPath.length) {
       ctx.save();
       ctx.strokeStyle = 'rgba(255,255,255,.85)';
       ctx.lineWidth = Math.max(1.5, view.cell * 0.18);
@@ -2547,45 +2643,66 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var hub = $('hub');
     hub.innerHTML = '';
     var owned = ownedTools();
-    var list = DIG.TOOLS;
+    // only tools the player can actually carry this run ever show up here -
+    // no locked/not-found ghost slots
+    var list = DIG.TOOLS.filter(function (t) {
+      return owned[t.id] && (!run || run.depth >= t.minDepth);
+    });
     var R = 108;
     list.forEach(function (t, i) {
       var a = -Math.PI / 2 + (i / list.length) * Math.PI * 2;
       var el = document.createElement('button');
-      var have = !!owned[t.id];
-      var deep = run ? run.depth >= t.minDepth : true;
-      var usable = have && deep;
-      el.className = 'slot' + (run && run.tool === t.id ? ' sel' : '') + (usable ? '' : ' locked');
+      var sel = run && hasTool(t.id);
+      el.className = 'slot' + (sel ? ' sel' : '');
       el.style.left = (50 + Math.cos(a) * (R / 3)) + '%';
       el.style.top = (50 + Math.sin(a) * (R / 3)) + '%';
       el.style.animationDelay = (i * 26) + 'ms';
       el.innerHTML = toolGlyph(t.id, 26) +
         '<small>' + t.name + '</small>' +
-        '<small style="opacity:.75">' + (!have ? 'not found' : (!deep ? 'depth ' + t.minDepth + '+' : '&times;' + t.power)) + '</small>';
+        '<small style="opacity:.75">&times;' + t.power + '</small>';
       el.addEventListener('click', function (ev) {
         ev.stopPropagation();
-        if (!usable) { el.animate([{transform:'translateX(-4px)'},{transform:'translateX(4px)'},{transform:'none'}], 180); return; }
         equip(t.id);
-        closeWheel();
       });
       hub.appendChild(el);
     });
     syncToolBtn();
   }
 
+  // tapping a tool toggles it in or out of the combo currently carried; the
+  // bare hand and a real tool are mutually exclusive, everything else stacks
   function equip(id) {
-    run.tool = id;
+    if (id === 'hand') {
+      run.equipped = ['hand'];
+    } else {
+      var idx = run.equipped.indexOf(id);
+      if (idx >= 0) {
+        run.equipped.splice(idx, 1);
+        if (!run.equipped.length) run.equipped = ['hand'];
+      } else {
+        run.equipped = run.equipped.filter(function (x) { return x !== 'hand'; });
+        run.equipped.push(id);
+      }
+    }
     input.hasLast = false;
     if (DIG.TOOL_BY_ID[id].detectsHazards) { run.detectTimer = 0; run.detectPulse = 1; }
     syncToolBtn();
+    buildWheel();
     buzz(10);
-    banner(DIG.TOOL_BY_ID[id].name.toUpperCase() + ' EQUIPPED');
+    var t = activeTool();
+    banner(t.name.toUpperCase() + (run.equipped.length > 1 ? ' (' + run.equipped.length + ')' : '') + ' EQUIPPED');
   }
   function syncToolBtn() {
     if (!run) return;
-    var t = DIG.TOOL_BY_ID[run.tool];
-    $('toolGlyph').outerHTML = toolGlyph(run.tool, 30).replace('<svg', '<svg class="glyph" id="toolGlyph"');
+    var t = activeTool();
+    var dominant = run.equipped.reduce(function (best, id) {
+      return DIG.TOOL_BY_ID[id].power > DIG.TOOL_BY_ID[best].power ? id : best;
+    }, run.equipped[0]);
+    $('toolGlyph').outerHTML = toolGlyph(dominant, 30).replace('<svg', '<svg class="glyph" id="toolGlyph"');
     $('toolName').textContent = t.name;
+    var chip = $('toolCountChip');
+    if (run.equipped.length > 1) { chip.style.display = ''; chip.textContent = run.equipped.length; }
+    else { chip.style.display = 'none'; }
   }
   function openWheel() {
     if (phase === 'ending') return;
@@ -2905,6 +3022,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       skipLayer: skipLayer,
       buyShopItem: buyShopItem,
       activateSwitch: activateSwitch,
+      activeTool: activeTool,
+      comboPower: comboPower,
       reset: function () { profile = blankProfile(); save(); renderTitle(); }
     };
   }

@@ -83,11 +83,26 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | Dissolving Spray | 4.4 | gradient | ×2.1 | 1 | wide, soft-edged mist — earned, never found |
 
 Tools are found buried in layers, the same way as currency. Tap the dock button
-for a radial wheel; time and input pause while it is open, and a swap changes
-the removal radius, shape and speed of the very next stroke.
+for a radial wheel — only tools you can actually carry this run appear on it,
+nothing locked or not-yet-found. Time and input pause while it is open.
 
 If a layer is gated behind a tool you do not hold, the generator buries one
 within three layers of the gate, so a descent can never dead-end.
+
+### Combining tools
+
+The wheel is a toggle, not a single pick: tap any number of tools to carry
+them all at once, and their effects multiply together into one blended tool —
+power stacks as a straight product (Chisel ×3.2 with Core Drill ×6.0 makes a
+×19.2 tool), radius averages across every component, and the footprint shape
+follows whichever one hits hardest. Any special ability transfers too — carry
+the Insulated Probe alongside anything else and you still short circuits and
+ping mines; carry the Wire Brush alongside anything else and fragile loot
+still shatters. The combo's name is a portmanteau of every tool's name —
+Cold Chisel + Core Drill + Insulated Probe becomes "Chidriobe" — with a small
+chip next to it counting how many are stacked. Equipping the Bare Hand always
+clears the combo back down to just the hand, and picking any real tool always
+drops the hand from the mix first.
 
 ### Cutting a loop with scissors
 
