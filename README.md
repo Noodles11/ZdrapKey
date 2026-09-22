@@ -37,6 +37,23 @@ A run ends in exactly one of three ways:
 Currency, tools and fragment-set unlocks persist across runs. Dying never
 touches the permanent bank or the sets.
 
+## Shop
+
+Between runs, spend banked currency on a loadout for the *next* run only —
+whatever you buy is spent the instant that run starts, win or lose, and never
+carries beyond it:
+
+- **Skip Charge** — instantly clears a layer during the run, no loot or
+  carry-over. Stacks up to 3.
+- **Coin Multiplier** — ×1.25 every coin banked during the run.
+- **Rent a tool** — any tool you haven't permanently found yet is usable for
+  that one run, then reverts to locked. Only one rental at a time.
+- **Second Wind** — evades death once during the run. Locked until you defuse
+  10 mines (see Hazards); the achievement, once earned, stays unlocked
+  forever, but the guard itself must be bought again for every run.
+
+A "clear loadout" option refunds anything bought but not yet spent on a run.
+
 ## Materials
 
 Depths 1–9 walk a fixed sequence, softest first: Topsoil, Cardboard, Sand, Clay,
@@ -101,7 +118,9 @@ inside the loop reacts exactly as if you'd uncovered it with any other tool.
   its icon, so scratching anywhere nearby shows a red hint before you reach
   the core; the aura shrinks the deeper you go, giving far less notice late
   in a descent. The Insulated Probe periodically pings, briefly showing every
-  nearby un-armed mine's aura straight through solid crust.
+  nearby un-armed mine's aura straight through solid crust. Defusing 10 mines
+  across any number of runs permanently unlocks **Second Wind** in the shop —
+  a one-time death-evading guard you can buy fresh for each run.
 - **Live circuits** end the run if you scratch across one where the crust is
   already thin. The Insulated Probe shorts them out instead, and pays for it.
 

@@ -51,6 +51,7 @@
   .chip:active{transform:scale(.92)}
   .chip[disabled]{opacity:.35}
   #bailBtn{border-color:#3a4a2e;background:#1b2417;color:#a8d66b}
+  #skipBtn{border-color:#4a3a1e;background:#241c0f;color:#e6c26b}
 
   /* ---------- stage ---------- */
   #stage{flex:1 1 auto;position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -133,6 +134,16 @@
   .pip.on{background:var(--frag);border-color:var(--frag)}
   .set .nm{flex:1;color:var(--ink-dim)}
   .set.done .nm{color:var(--frag);font-weight:700}
+  .shopItem{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:9px 0;border-bottom:1px solid var(--line)}
+  .shopItem:last-child{border-bottom:none}
+  .si-name{font-size:13px;font-weight:700}
+  .si-count{color:var(--accent);font-size:11px;margin-left:6px}
+  .si-desc{font-size:11.5px;color:var(--ink-dim);margin-top:2px;max-width:230px}
+  .si-buy{flex:0 0 auto;border:0;border-radius:10px;padding:9px 13px;
+    font:800 12px ui-monospace,Menlo,monospace;background:var(--accent);color:#1a1a05}
+  .si-buy[disabled]{opacity:.3;background:var(--line);color:var(--ink-dim)}
+  .si-buy.owned{background:var(--frag);color:#04241b;opacity:1}
   #endTitle{font-size:26px}
   .flash{animation:flash .5s ease both}
   @keyframes flash{0%{filter:brightness(2.4)}100%{filter:none}}
@@ -149,6 +160,7 @@
     <div class="readout" id="r-time"><b id="timeV">0:00</b><span>Dig time</span></div>
     <div class="readout" id="r-coin"><b id="coinV">0</b><span>Held</span></div>
     <div class="spacer"></div>
+    <button class="chip" id="skipBtn" style="display:none">Skip <span id="skipCountV">0</span></button>
     <button class="chip" id="bailBtn">Bail</button>
   </div>
 
@@ -177,6 +189,12 @@
     <div class="row"><span>Banked currency</span><span class="v" id="bankV">0</span></div>
     <div class="row"><span>Deepest layer</span><span class="v" id="bestV">0</span></div>
     <div class="row"><span>Bugs cleared</span><span class="v" id="bugsV">0</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Shop &middot; next run only</h2>
+    <div id="shopList"></div>
+    <button class="big ghost" id="shopClearBtn">Clear loadout (refund)</button>
   </div>
 
   <div class="card">
@@ -209,7 +227,11 @@
       <b>Scissors</b> cut a thin line like any tool, but close the line into a loop and the whole
       inside pops out instantly. Cardboard, Topsoil, Sand and Clay are soft enough to keep whatever
       loot was inside; cut a loop through anything harder and the clear still happens, but the loot
-      inside is lost.
+      inside is lost.<br><br>
+      The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
+      skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
+      <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
+      starts, whatever happens in it.
     </p>
   </div>
 
@@ -1006,11 +1028,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   var profile = load();
 
   var BUG_KILL_GOAL = 20;
+  var MINE_DEFUSE_GOAL = 10;
+
+  function blankLoadout() { return { skipCharges: 0, coinMult: 1, rentedTool: null, secondWind: false }; }
 
   function blankProfile() {
     var frags = {};
     DIG.SETS.forEach(function (s) { frags[s.id] = new Array(s.size).fill(false); });
-    return { bank: 0, best: 0, tools: [], frags: frags, runs: 0, bugsKilled: 0 };
+    return {
+      bank: 0, best: 0, tools: [], frags: frags, runs: 0, bugsKilled: 0,
+      minesDefused: 0, secondWindUnlocked: false, loadout: blankLoadout()
+    };
   }
   function load() {
     try {
@@ -1019,7 +1047,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var p = JSON.parse(raw), b = blankProfile();
       b.bank = p.bank | 0; b.best = p.best | 0; b.runs = p.runs | 0;
       b.bugsKilled = p.bugsKilled | 0;
+      b.minesDefused = p.minesDefused | 0;
+      b.secondWindUnlocked = !!p.secondWindUnlocked;
       b.tools = Array.isArray(p.tools) ? p.tools.filter(function (t) { return DIG.TOOL_BY_ID[t]; }) : [];
+      var lo = p.loadout || {};
+      b.loadout.skipCharges = Math.max(0, lo.skipCharges | 0);
+      b.loadout.coinMult = lo.coinMult > 1 ? lo.coinMult : 1;
+      b.loadout.rentedTool = (lo.rentedTool && DIG.TOOL_BY_ID[lo.rentedTool]) ? lo.rentedTool : null;
+      b.loadout.secondWind = !!(b.secondWindUnlocked && lo.secondWind);
       DIG.SETS.forEach(function (s) {
         var src = (p.frags && p.frags[s.id]) || [];
         for (var i = 0; i < s.size; i++) b.frags[s.id][i] = !!src[i];
@@ -1098,6 +1133,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   function newRun() {
     var p = perks();
+    // the shop loadout is spent the instant a run starts, win or lose
+    var lo = profile.loadout;
+    var skipCharges = lo.skipCharges, coinMult = lo.coinMult, rentedTool = lo.rentedTool, secondWind = lo.secondWind;
+    profile.loadout = blankLoadout();
+    save();
     run = {
       seed: 'r' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e6).toString(36),
       depth: p.headStart ? 3 : 1,
@@ -1115,10 +1155,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       removed: 0,
       collapsing: 0,
       bossProgress: 0,
-      bossPulse: 0
+      bossPulse: 0,
+      skipCharges: skipCharges,
+      coinMult: coinMult,
+      rentedTool: rentedTool,
+      secondWind: secondWind
     };
     loadLayer(run.depth);
     phase = 'dig';
+    updateHud();
+    syncSkipBtn();
   }
 
   function ownedTools() {
@@ -1126,7 +1172,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     set.hand = true;
     profile.tools.forEach(function (t) { set[t] = true; });
     run.tools.forEach(function (t) { set[t] = true; });
+    if (run.rentedTool) set[run.rentedTool] = true;
     return set;
+  }
+
+  function addCoins(v) {
+    var added = Math.round(v * run.coinMult);
+    run.coins += added;
+    return added;
   }
 
   function loadLayer(depth) {
@@ -1228,6 +1281,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     banner('MINE DEFUSED');
     buzz([16, 40]);
     burst(toPx(hz.x, hz.y), '#9fb0c0', 20, 3);
+    profile.minesDefused++;
+    if (!profile.secondWindUnlocked && profile.minesDefused >= MINE_DEFUSE_GOAL) {
+      profile.secondWindUnlocked = true;
+      setTimeout(function () { banner('ACHIEVEMENT · SECOND WIND UNLOCKED IN SHOP'); }, 900);
+    }
+    save();
   }
 
   function stepMines(dt) {
@@ -1525,7 +1584,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         if (run.tool === 'probe') {
           cz.live = false;
           run.revealedCircuits[cz.id] = true;
-          run.coins += 12;
+          addCoins(12);
           banner('CIRCUIT SHORTED');
           burst(toPx(hit.x, hit.y), DIG.SIGNAL_COLORS.circuit, 18);
           buzz(24);
@@ -1569,7 +1628,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         run.revealedCircuits[cz.id] = true;
         if (run.tool === 'probe') {
           cz.live = false;
-          run.coins += 12;
+          addCoins(12);
           banner('CIRCUIT SHORTED');
           burst(toPx(cur.x, cur.y), DIG.SIGNAL_COLORS.circuit, 18);
           buzz(24);
@@ -1609,8 +1668,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         floatText(p, 'SHATTERED', '#8a8f96');
         return;
       }
-      var v = Math.round(it.value * (run.perks.coinBonus ? 1.25 : 1));
-      run.coins += v;
+      var v = addCoins(it.value * (run.perks.coinBonus ? 1.25 : 1));
       burst(p, DIG.SIGNAL_COLORS.coin, 12);
       floatText(p, '+' + v, DIG.SIGNAL_COLORS.coin);
       buzz(8);
@@ -1745,6 +1803,28 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     banner(reason === 'boss' ? 'CHANNEL TRACED' : 'SEAM FOUND');
     $('bailBtn').disabled = false;
     run.interT = 0;
+    syncSkipBtn();
+  }
+
+  function skipLayer() {
+    if (phase !== 'dig' || wheelOpen || run.skipCharges <= 0) return;
+    run.skipCharges--;
+    syncSkipBtn();
+    banner('LAYER SKIPPED');
+    buzz(20);
+    phase = 'interlude';
+    run.carry = 0;              // a skip is a shortcut, not a proper clear
+    run.cleared++;
+    $('bailBtn').disabled = false;
+    run.interT = 0;
+  }
+
+  function syncSkipBtn() {
+    var btn = $('skipBtn');
+    if (!run || run.skipCharges <= 0) { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    btn.disabled = phase !== 'dig';
+    $('skipCountV').textContent = '×' + run.skipCharges;
   }
 
   function descend() {
@@ -1753,11 +1833,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if (run.depth > C.DEPTH_CEILING) { reachVault(); return; }
     loadLayer(run.depth);
     phase = 'dig';
+    syncSkipBtn();
   }
 
   function reachVault() {
-    var bonus = 500 + run.cleared * 25;
-    run.coins += bonus;
+    var bonus = addCoins(500 + run.cleared * 25);
     endRun('vault', 'You reached the vault at depth ' + C.DEPTH_CEILING + '. Bonus +' + bonus + '.');
   }
 
@@ -1767,6 +1847,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   function endRun(kind, msg) {
     if (phase === 'ending') return;
+    // a bought Second Wind absorbs exactly one fatal hit per run - the
+    // hazard that triggered it (mine already exploded, circuit already
+    // blown) still happened, you just don't die from it
+    if (kind === 'death' && run.secondWind) {
+      run.secondWind = false;
+      banner('SECOND WIND · YOU SURVIVED');
+      buzz([30, 60, 30, 60, 30]);
+      flash = { t: 0, color: '255,255,255' };
+      shake = Math.max(shake, 10);
+      updateHud();
+      return;
+    }
     phase = 'ending';
     input.down = false;
     closeWheel();
@@ -2432,6 +2524,107 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if ($('bailBtn').disabled) return;
     bail();
   });
+  $('skipBtn').addEventListener('click', function () {
+    if ($('skipBtn').disabled) return;
+    skipLayer();
+  });
+
+  /* ------------------------------------------------------------ shop */
+  // everything bought here only lasts the next run - newRun() spends the
+  // whole loadout the instant it starts, whatever the run's outcome
+  var SHOP_SKIP_COST = 80, SHOP_SKIP_MAX = 3;
+  var SHOP_COIN_MULT_COST = 150, SHOP_COIN_MULT = 1.25;
+  var SHOP_SECOND_WIND_COST = 300;
+
+  function toolRentCost(t) { return 40 + t.minDepth * 12; }
+
+  function shopRow(id, name, desc, cost, blocked, ownedLabel, neutralLabel) {
+    var afford = profile.bank >= cost;
+    var disabled = !afford || blocked;
+    var label = ownedLabel || neutralLabel || cost;
+    return '<div class="shopItem"><div class="si-info"><div class="si-name">' + name +
+      '</div><div class="si-desc">' + desc + '</div></div>' +
+      '<button class="si-buy' + (ownedLabel ? ' owned' : '') + '" data-item="' + id + '"' +
+      (disabled ? ' disabled' : '') + '>' + label + '</button></div>';
+  }
+
+  function renderShop() {
+    var lo = profile.loadout, html = '';
+
+    html += shopRow('skip',
+      'Skip Charge' + (lo.skipCharges ? ' <span class="si-count">×' + lo.skipCharges + '</span>' : ''),
+      'Instantly clear a layer during the next run — no loot, no carry-over.',
+      SHOP_SKIP_COST, lo.skipCharges >= SHOP_SKIP_MAX, lo.skipCharges >= SHOP_SKIP_MAX ? 'MAX' : null);
+
+    html += shopRow('coinMult', 'Coin Multiplier',
+      '×' + SHOP_COIN_MULT + ' every coin banked during the next run.',
+      SHOP_COIN_MULT_COST, lo.coinMult > 1, lo.coinMult > 1 ? 'ACTIVE' : null);
+
+    if (profile.secondWindUnlocked) {
+      html += shopRow('secondWind', 'Second Wind',
+        'Evade death once during the next run.',
+        SHOP_SECOND_WIND_COST, lo.secondWind, lo.secondWind ? 'ACTIVE' : null);
+    } else {
+      html += '<div class="shopItem"><div class="si-info"><div class="si-name">Second Wind</div>' +
+        '<div class="si-desc">Locked — defuse ' + MINE_DEFUSE_GOAL + ' mines to unlock (' +
+        profile.minesDefused + '/' + MINE_DEFUSE_GOAL + ').</div></div>' +
+        '<button class="si-buy" disabled>—</button></div>';
+    }
+
+    DIG.TOOLS.forEach(function (t) {
+      if (t.id === 'hand' || t.reward) return;      // always owned, or earned-only
+      if (profile.tools.indexOf(t.id) >= 0) return; // already owned for good
+      var cost = toolRentCost(t), active = lo.rentedTool === t.id, blockedByOther = !!lo.rentedTool && !active;
+      html += shopRow('rent:' + t.id, 'Rent ' + t.name,
+        'Usable for the next run only. ' + t.note,
+        cost, blockedByOther, active ? 'RENTED' : null, blockedByOther ? 'SLOT USED' : null);
+    });
+
+    $('shopList').innerHTML = html;
+  }
+
+  function buyShopItem(id) {
+    var lo = profile.loadout;
+    if (id === 'skip') {
+      if (lo.skipCharges >= SHOP_SKIP_MAX || profile.bank < SHOP_SKIP_COST) return;
+      profile.bank -= SHOP_SKIP_COST; lo.skipCharges++;
+    } else if (id === 'coinMult') {
+      if (lo.coinMult > 1 || profile.bank < SHOP_COIN_MULT_COST) return;
+      profile.bank -= SHOP_COIN_MULT_COST; lo.coinMult = SHOP_COIN_MULT;
+    } else if (id === 'secondWind') {
+      if (!profile.secondWindUnlocked || lo.secondWind || profile.bank < SHOP_SECOND_WIND_COST) return;
+      profile.bank -= SHOP_SECOND_WIND_COST; lo.secondWind = true;
+    } else if (id.indexOf('rent:') === 0) {
+      var toolId = id.slice(5), t = DIG.TOOL_BY_ID[toolId];
+      if (!t || lo.rentedTool) return;
+      var cost = toolRentCost(t);
+      if (profile.bank < cost) return;
+      profile.bank -= cost; lo.rentedTool = toolId;
+    } else {
+      return;
+    }
+    save();
+    renderTitle();
+  }
+
+  function clearLoadout() {
+    var lo = profile.loadout, refund = 0;
+    refund += lo.skipCharges * SHOP_SKIP_COST;
+    if (lo.coinMult > 1) refund += SHOP_COIN_MULT_COST;
+    if (lo.secondWind) refund += SHOP_SECOND_WIND_COST;
+    if (lo.rentedTool) refund += toolRentCost(DIG.TOOL_BY_ID[lo.rentedTool]);
+    profile.bank += refund;
+    profile.loadout = blankLoadout();
+    save();
+    renderTitle();
+  }
+
+  $('shopList').addEventListener('click', function (ev) {
+    var btn = ev.target.closest ? ev.target.closest('.si-buy') : null;
+    if (!btn || btn.disabled) return;
+    buyShopItem(btn.getAttribute('data-item'));
+  });
+  $('shopClearBtn').addEventListener('click', clearLoadout);
 
   /* ------------------------------------------------------------ screens */
   function show(id) {
@@ -2444,6 +2637,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     $('bestV').textContent = profile.best;
     $('bugsV').textContent = bugsUnlocked() ? profile.bugsKilled + ' ✓' :
       profile.bugsKilled + ' / ' + BUG_KILL_GOAL;
+    renderShop();
     var inv = $('invList');
     inv.innerHTML = '';
     DIG.TOOLS.forEach(function (t) {
@@ -2565,9 +2759,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         run.carry = carry || 0;
         loadLayer(depth);
         phase = 'dig';
+        syncSkipBtn();
       },
       integrityAt: integrityAt,
       equip: equip,
+      skipLayer: skipLayer,
+      buyShopItem: buyShopItem,
       reset: function () { profile = blankProfile(); save(); renderTitle(); }
     };
   }
