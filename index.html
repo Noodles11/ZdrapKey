@@ -52,6 +52,7 @@
   .chip[disabled]{opacity:.35}
   #bailBtn{border-color:#3a4a2e;background:#1b2417;color:#a8d66b}
   #skipBtn{border-color:#4a3a1e;background:#241c0f;color:#e6c26b}
+  #testBadge{border-color:var(--tool);background:#241a22;color:var(--tool);pointer-events:none}
 
   /* ---------- stage ---------- */
   #stage{flex:1 1 auto;position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -116,6 +117,15 @@
   #wheel .hint{position:absolute;left:0;right:0;bottom:11vh;text-align:center;font-size:11px;
     letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
 
+  /* ---------- test mode notice ---------- */
+  #testNotice{position:fixed;inset:0;display:none;z-index:60;background:rgba(6,8,12,.72);
+    backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+    align-items:center;justify-content:center;padding:22px}
+  #testNotice.open{display:flex;animation:fade .18s ease both}
+  #testNotice .card{max-width:320px;width:100%;margin:0}
+  #testNotice h2{color:var(--tool)}
+  #testNoticeMsg{font-size:13.5px;line-height:1.5;margin:0 0 14px}
+
   /* ---------- overlays ---------- */
   .screen{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;
     flex-direction:column;padding:calc(var(--safe-top) + 22px) 22px calc(var(--safe-bot) + 22px);overflow:auto}
@@ -137,6 +147,9 @@
   .inv .it{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:12px;
     padding:7px 11px 7px 7px;font-size:12px;background:var(--panel-2)}
   .inv .it.off{opacity:.3}
+  .inv button.it{color:inherit;font:inherit;text-align:left;cursor:pointer;transition:transform .14s cubic-bezier(.2,.9,.3,1.3)}
+  .inv button.it:active{transform:scale(.94)}
+  .inv .swatch{width:14px;height:14px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(255,255,255,.25)}
   .sets{display:flex;flex-direction:column;gap:9px}
   .set{display:flex;align-items:center;gap:10px;font-size:12.5px}
   .pips{display:flex;gap:4px}
@@ -169,6 +182,7 @@
     <div class="readout" id="r-depth"><b id="depthV">1</b><span>Depth</span></div>
     <div class="readout" id="r-time"><b id="timeV">0:00</b><span>Dig time</span></div>
     <div class="readout" id="r-coin"><b id="coinV">0</b><span>Held</span></div>
+    <button class="chip" id="testBadge" style="display:none">Test</button>
     <div class="spacer"></div>
     <button class="chip" id="skipBtn" style="display:none">Skip <span id="skipCountV">0</span></button>
     <button class="chip" id="bailBtn">Bail</button>
@@ -192,6 +206,14 @@
 </div>
 
 <div id="wheel"><div class="hub" id="hub"></div><div class="hint">Time paused &middot; tap to combine, tap outside when done</div></div>
+
+<div id="testNotice">
+  <div class="card">
+    <h2>Test mode</h2>
+    <p id="testNoticeMsg" class="tiny"></p>
+    <button class="big" id="testNoticeBtn">Continue</button>
+  </div>
+</div>
 
 <!-- ============ TITLE / BANK ============ -->
 <div class="screen on" id="scTitle">
@@ -264,13 +286,29 @@
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
-      starts, whatever happens in it.
+      starts, whatever happens in it.<br><br>
+      <b>Test mode</b> lets you pick any surface and practice it directly, every tool unlocked,
+      the same surface every layer until you bail &mdash; nothing played there is ever banked, spent
+      or lost, and a death is just a dismissible heads-up.
     </p>
   </div>
 
   <button class="big" id="startBtn">Start descent</button>
+  <button class="big ghost" id="testModeBtn">Test mode</button>
   <button class="big ghost" id="testBtn">Run generator self-test</button>
   <div class="card" id="testCard" style="display:none"><h2>Self-test</h2><div id="testOut"></div></div>
+</div>
+
+<!-- ============ TEST MODE PICKER ============ -->
+<div class="screen" id="scTestPick">
+  <h1>Test <em>mode</em></h1>
+  <p class="sub">Pick any surface. Every layer is the same surface, every tool is ready no matter
+    the depth, and nothing here is banked or lost — a death is just a heads-up you can dismiss.</p>
+  <div class="card">
+    <h2>Surfaces</h2>
+    <div class="inv" id="testMatList"></div>
+  </div>
+  <button class="big ghost" id="testPickBackBtn">Back to surface</button>
 </div>
 
 <!-- ============ RUN END ============ -->
@@ -497,8 +535,10 @@ var DIG = (function () {
   }
 
   // Asymptotic: approaches HMAX * mult * deepBoostMax and never exceeds it.
-  function hardnessForDepth(depth, bugsUnlocked) {
-    var mat = materialForDepth(depth, bugsUnlocked);
+  // matOverride lets a caller (test mode) force hardness for a chosen
+  // material instead of whatever would normally occupy this depth.
+  function hardnessForDepth(depth, bugsUnlocked, matOverride) {
+    var mat = matOverride || materialForDepth(depth, bugsUnlocked);
     var base = 1 + (C.HMAX - 1) * (1 - Math.exp(-(depth - 1) / 16));
     var cyc = deepCycleIndex(depth);
     var deepBoost = 1 + 0.35 * (1 - Math.exp(-cyc / 3.2));
@@ -610,14 +650,18 @@ var DIG = (function () {
   /**
    * Build a fully-specified layer from (seed, depth, carry).
    * carry = leftover hardness handed down by the previous layer (already capped).
+   * ctx.material forces a specific material regardless of depth (test mode):
+   * boss/vault then follow from that material's own identity instead of the
+   * depth, so picking Reinforced Plating or the Vault Seal still behaves like
+   * the real thing.
    */
   function genLayer(seed, depth, carry, ctx) {
     ctx = ctx || {};
     var rng = rngFor(seed, depth, 'layer');
-    var mat = materialForDepth(depth, ctx.bugsUnlocked);
-    var boss = isBossDepth(depth);
-    var vault = isVaultDepth(depth);
-    var baseHard = hardnessForDepth(depth, ctx.bugsUnlocked);
+    var mat = ctx.material || materialForDepth(depth, ctx.bugsUnlocked);
+    var boss = ctx.material ? mat.id === 'plating' : isBossDepth(depth);
+    var vault = ctx.material ? mat.id === 'vault' : isVaultDepth(depth);
+    var baseHard = hardnessForDepth(depth, ctx.bugsUnlocked, ctx.material);
     var carryCapped = Math.max(0, Math.min(baseHard, carry || 0));   // total <= 2x base
 
     var layer = {
@@ -1132,6 +1176,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var p = toPx(b.x, b.y);
     burst(p, b.back, 14, 2);
     buzz(10);
+    if (run.testMode) return;   // nothing is gained in test mode
     profile.bugsKilled++;
     if (!bugsUnlocked() && profile.bugsKilled >= BUG_KILL_GOAL) {
       profile.tools.push('spray');
@@ -1211,7 +1256,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       skipCharges: skipCharges,
       coinMult: coinMult,
       rentedTool: rentedTool,
-      secondWind: secondWind
+      secondWind: secondWind,
+      testMode: false,
+      testMaterialId: null
     };
     loadLayer(run.depth);
     phase = 'dig';
@@ -1219,9 +1266,61 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     syncSkipBtn();
   }
 
+  // the depth a material would first show up at in a real descent, so its
+  // hardness and hazard density in test mode match what a real run feels like
+  function firstDepthForMaterial(matId) {
+    for (var d = 1; d <= 200; d++) {
+      if (DIG.materialForDepth(d, true).id === matId) return d;
+    }
+    return 1;
+  }
+
+  // test mode: pick any surface, every layer is that surface, every tool is
+  // usable regardless of depth, and nothing played here is ever banked,
+  // spent, or lost - see endTestEvent() and the run.testMode guards below
+  function newTestRun(matId) {
+    var depth = firstDepthForMaterial(matId);
+    run = {
+      seed: 'test-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e6).toString(36),
+      depth: depth,
+      startDepth: depth,
+      carry: 0,
+      coins: 0,
+      cleared: 0,
+      time: 0,
+      tools: [],
+      frags: [],
+      equipped: ['hand'],
+      perks: perks(),
+      layer: null,
+      integrity: null,
+      removed: 0,
+      collapsing: 0,
+      bossProgress: 0,
+      bossPulse: 0,
+      skipCharges: 0,
+      coinMult: 1,
+      rentedTool: null,
+      secondWind: false,
+      testMode: true,
+      testMaterialId: matId
+    };
+    loadLayer(run.depth);
+    phase = 'dig';
+    updateHud();
+    syncSkipBtn();
+    $('testBadge').style.display = '';
+    $('testBadge').textContent = DIG.MATERIALS[matId].name;
+    $('bailBtn').disabled = false;   // free to leave test mode at any time
+  }
+
   function ownedTools() {
     var set = {};
     set.hand = true;
+    if (run && run.testMode) {
+      DIG.TOOLS.forEach(function (t) { set[t.id] = true; });
+      return set;
+    }
     profile.tools.forEach(function (t) { set[t] = true; });
     run.tools.forEach(function (t) { set[t] = true; });
     if (run.rentedTool) set[run.rentedTool] = true;
@@ -1319,7 +1418,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function loadLayer(depth) {
     var owned = ownedTools();
     var pool = DIG.TOOLS.map(function (t) { return t.id; }).filter(function (id) { return !owned[id]; });
-    run.layer = DIG.genLayer(run.seed, depth, run.carry, { toolPool: pool, owned: owned, bugsUnlocked: bugsUnlocked() });
+    var genCtx = { toolPool: pool, owned: owned, bugsUnlocked: bugsUnlocked() };
+    // test mode forces the same surface every layer, regardless of depth
+    if (run.testMode) genCtx.material = DIG.MATERIALS[run.testMaterialId];
+    run.layer = DIG.genLayer(run.seed, depth, run.carry, genCtx);
     run.integrity = new Float32Array(GW * GH).fill(1);
     run.removed = 0;
     run.collapsing = 0;
@@ -1332,10 +1434,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.cutPath = [];
     input.hasLast = false;
     // any equipped tool that can no longer be carried at this depth drops
-    // out of the combo; falls back to the bare hand if that empties it
+    // out of the combo; falls back to the bare hand if that empties it. Test
+    // mode ignores the depth gate - every tool is always carriable there.
     run.equipped = run.equipped.filter(function (id) {
       var t = DIG.TOOL_BY_ID[id];
-      return t && depth >= t.minDepth && owned[id];
+      return t && owned[id] && (run.testMode || depth >= t.minDepth);
     });
     if (!run.equipped.length) run.equipped = ['hand'];
     paintMaterial();
@@ -1481,6 +1584,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     banner('MINE DEFUSED');
     buzz([16, 40]);
     burst(toPx(hz.x, hz.y), '#9fb0c0', 20, 3);
+    if (run.testMode) return;   // nothing is gained in test mode
     profile.minesDefused++;
     if (!profile.secondWindUnlocked && profile.minesDefused >= MINE_DEFUSE_GOAL) {
       profile.secondWindUnlocked = true;
@@ -2272,8 +2376,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       run.cleared++;
       run.carry = 0;                       // you fell through: nothing carries
       run.depth++;
-      profile.best = Math.max(profile.best, run.depth); save();
-      if (run.depth > C.DEPTH_CEILING) { reachVault(); return; }
+      if (!run.testMode) {
+        profile.best = Math.max(profile.best, run.depth); save();
+        if (run.depth > C.DEPTH_CEILING) { reachVault(); return; }
+      }
       loadLayer(run.depth);
       run.collapsing = 0;
     }, 850);
@@ -2294,7 +2400,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     // crust left unscratched no longer carries into the next layer
     run.carry = 0;
     run.cleared++;
-    profile.best = Math.max(profile.best, L.depth); save();
+    if (!run.testMode) { profile.best = Math.max(profile.best, L.depth); save(); }
     var p = toPx(L.target.x, L.target.y);
     burst(p, '#ffffff', 34, 3);
     buzz(26);
@@ -2326,9 +2432,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   function descend() {
-    $('bailBtn').disabled = true;
+    // test mode can bail between any two layers, so its bail button stays on
+    if (!run.testMode) $('bailBtn').disabled = true;
     run.depth++;
-    if (run.depth > C.DEPTH_CEILING) { reachVault(); return; }
+    if (!run.testMode && run.depth > C.DEPTH_CEILING) { reachVault(); return; }
     loadLayer(run.depth);
     phase = 'dig';
     syncSkipBtn();
@@ -2343,8 +2450,47 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     endRun('bail', 'You climbed out with everything you were carrying.');
   }
 
+  // test mode never really ends a run: bailing just leaves the sandbox, and
+  // a death is nothing more than a dismissible heads-up before moving on
+  function endTestEvent(kind, msg) {
+    phase = 'ending';
+    input.down = false;
+    closeWheel();
+    if (kind !== 'death') { exitTestMode(); return; }
+    var delay = run.explosion ? 1700 : 700;
+    setTimeout(function () {
+      showTestNotice('This would have ended a real run: ' + msg, function () {
+        run.depth++;
+        loadLayer(run.depth);
+        phase = 'dig';
+        syncSkipBtn();
+      });
+    }, delay);
+  }
+
+  function exitTestMode() {
+    run = null;
+    phase = 'idle';
+    $('testBadge').style.display = 'none';
+    renderTestPicker();
+    show('scTestPick');
+  }
+
+  function showTestNotice(msg, onContinue) {
+    $('testNoticeMsg').textContent = msg;
+    $('testNotice').classList.add('open');
+    var btn = $('testNoticeBtn');
+    function onClick() {
+      btn.removeEventListener('click', onClick);
+      $('testNotice').classList.remove('open');
+      onContinue();
+    }
+    btn.addEventListener('click', onClick);
+  }
+
   function endRun(kind, msg) {
     if (phase === 'ending') return;
+    if (run.testMode) { endTestEvent(kind, msg); return; }
     // a bought Second Wind absorbs exactly one fatal hit per run - the
     // hazard that triggered it (mine already exploded, circuit already
     // blown) still happened, you just don't die from it
@@ -3002,7 +3148,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     // only tools the player can actually carry this run ever show up here -
     // no locked/not-found ghost slots
     var list = DIG.TOOLS.filter(function (t) {
-      return owned[t.id] && (!run || run.depth >= t.minDepth);
+      return owned[t.id] && (!run || run.testMode || run.depth >= t.minDepth);
     });
     var R = 108;
     list.forEach(function (t, i) {
@@ -3268,10 +3414,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   $('shopClearBtn').addEventListener('click', clearLoadout);
 
   /* ------------------------------------------------------------ screens */
+  var SCREENS = ['scTitle', 'scEnd', 'scTestPick'];
   function show(id) {
-    ['scTitle', 'scEnd'].forEach(function (s) { $(s).classList.toggle('on', s === id); });
+    SCREENS.forEach(function (s) { $(s).classList.toggle('on', s === id); });
   }
-  function hideScreens() { ['scTitle', 'scEnd'].forEach(function (s) { $(s).classList.remove('on'); }); }
+  function hideScreens() { SCREENS.forEach(function (s) { $(s).classList.remove('on'); }); }
 
   function renderTitle() {
     $('bankV').textContent = profile.bank;
@@ -3298,6 +3445,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       for (var i = 0; i < s.size; i++) pips += '<div class="pip' + (profile.frags[s.id][i] ? ' on' : '') + '"></div>';
       row.innerHTML = '<div class="pips">' + pips + '</div><div class="nm">' + s.name + ' &middot; ' + s.desc + '</div>';
       sl.appendChild(row);
+    });
+  }
+
+  // every material in the game, in a sensible reading order, as a grid of
+  // one-tap picks for test mode
+  var TEST_MATERIAL_ORDER = DIG.FIXED_SEQ.concat(DIG.DEEP_CYCLE).concat(['plating', 'vault', 'bugs']);
+  function renderTestPicker() {
+    var list = $('testMatList');
+    list.innerHTML = '';
+    TEST_MATERIAL_ORDER.forEach(function (id) {
+      var m = DIG.MATERIALS[id];
+      var el = document.createElement('button');
+      el.className = 'it';
+      el.innerHTML = '<span class="swatch" style="background:' + m.color + '"></span><span>' + m.name + '</span>';
+      el.addEventListener('click', function () { startTestRun(id); });
+      list.appendChild(el);
+    });
+  }
+
+  function startTestRun(matId) {
+    unlockAudio();
+    hideScreens();
+    requestAnimationFrame(function () {
+      resize(); newTestRun(matId); buildWheel();
     });
   }
 
@@ -3364,6 +3535,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     });
   });
   $('homeBtn').addEventListener('click', function () { renderTitle(); show('scTitle'); });
+  $('testModeBtn').addEventListener('click', function () { renderTestPicker(); show('scTestPick'); });
+  $('testPickBackBtn').addEventListener('click', function () { renderTitle(); show('scTitle'); });
 
   /* ------------------------------------------------------------ self-test */
   function runSelfTest() {
@@ -3394,6 +3567,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   if (/[?&]debug/.test(location.search)) {
     window.DEEPDIG = {
       run: function () { return run; },
+      input: function () { return input; },
       phase: function () { return phase; },
       profile: function () { return profile; },
       toPx: toPx,
@@ -3411,6 +3585,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       activateSwitch: activateSwitch,
       activeTool: activeTool,
       comboPower: comboPower,
+      startTestRun: function (matId) {
+        unlockAudio();
+        hideScreens();
+        newTestRun(matId);
+        buildWheel();
+      },
+      exitTestMode: exitTestMode,
+      dismissTestNotice: function () { $('testNoticeBtn').click(); },
       reset: function () { profile = blankProfile(); save(); renderTitle(); }
     };
   }

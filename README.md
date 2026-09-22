@@ -37,6 +37,23 @@ A run ends in exactly one of three ways:
 Currency, tools and fragment-set unlocks persist across runs. Dying never
 touches the permanent bank or the sets.
 
+## Test mode
+
+**Test mode**, from the title screen, is a sandbox: pick any surface in the
+game — including ones you'd never normally hold a tool for yet, or that only
+ever show up as a boss layer or the vault — and every layer generated from
+then on is that same surface, at the hardness and hazard density it would
+have at its normal depth. Every tool is available immediately, regardless of
+depth or what you've actually found. Bail out any time, even mid-layer, not
+just between layers.
+
+Nothing here is ever kept: currency, fragments and tools picked up still
+show the normal feedback in the moment, but none of it is banked, and
+nothing counts toward bug kills, mine-defuse tallies or set completion. A
+mine or a live circuit doesn't end anything either — it's just a dismissible
+heads-up ("this would have ended a real run") that hands you a fresh layer
+of the same surface once you tap through it.
+
 ## Shop
 
 Between runs, spend banked currency on a loadout for the *next* run only —
