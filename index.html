@@ -218,7 +218,8 @@
     <p class="tiny">
       Drag to scratch. Every layer hides <b>one seam</b> &mdash; expose it, then tap the star
       to break the layer regardless of what's left. Every 10th layer is <b>reinforced</b>: trace the hidden
-      channel end to end instead.<br><br>
+      channel end to end instead. Uncovering a coin, fragment or tool never collects it by itself &mdash;
+      a pulsing ring shows once it's exposed, and only tapping it actually loots it.<br><br>
       The tool wheel only ever shows what you can actually carry this run. Tapping a tool toggles it
       &mdash; carry several at once and their effects multiply into one blended tool, named as a portmanteau
       of every component (Chisel + Drill + Probe &rarr; "Chidriobe") with a chip counting how many are
@@ -1817,13 +1818,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       }
     }
 
-    // loot: the off-switch isn't collected, it's held (see findRevealedSwitchAtRaw)
-    for (i = 0; i < L.items.length; i++) {
-      var it = L.items[i];
-      if (it.taken || it.kind === 'switch') continue;
-      var reveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
-      if (integrityAt(it.x, it.y) <= reveal) collect(it);
-    }
+    // loot is never picked up by just digging near it any more - see the
+    // tap-to-loot check in the pointerdown handler (the off-switch is a
+    // separate case again: it's held, not collected)
 
     // the seam: exposing it only reveals the star. Advancing needs a tap on it.
     if (!L.isBoss && !run.seamRevealed) {
@@ -2288,11 +2285,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
 
     // loot
+    var lootReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
     for (i = 0; i < L.items.length; i++) {
       var it = L.items[i];
       if (it.taken) continue;
       var q = toPx(it.x, it.y);
       ctx.save(); ctx.translate(q.x, q.y);
+      // once uncovered, a pulsing ring invites the tap that actually loots it -
+      // nothing is ever picked up by digging near it alone
+      if (it.kind !== 'switch' && integrityAt(it.x, it.y) <= lootReveal) {
+        var itPulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + itPulse * 0.35) + ')';
+        ctx.lineWidth = cell * 0.2;
+        ctx.beginPath(); ctx.arc(0, 0, cell * (2.0 + itPulse * 0.4), 0, 6.2832); ctx.stroke();
+        ctx.restore();
+      }
       if (it.kind === 'coin') {
         ctx.fillStyle = DIG.SIGNAL_COLORS.coin;
         ctx.beginPath(); ctx.arc(0, 0, cell * 1.25, 0, 6.2832); ctx.fill();
@@ -2729,9 +2737,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var p = rawPoint(ev);
     return { x: p.x, y: p.y - THUMB_OFFSET };
   }
+  // only one finger drives a stroke at a time; a second touch (the start of
+  // a pinch) is fully ignored instead of hijacking or corrupting it
+  var activePointerId = null;
   cv.addEventListener('pointerdown', function (ev) {
     if (phase !== 'dig' || wheelOpen) return;
+    if (input.down) { ev.preventDefault(); return; }
     ev.preventDefault();
+    activePointerId = ev.pointerId;
     var raw = rawPoint(ev);
     if (run.bugs && run.bugs.length) {
       var bugReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
@@ -2741,6 +2754,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         var bp = toPx(b.x, b.y);
         if (DIG.dist(raw.x, raw.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
       }
+    }
+    // loot only ever comes home if you tap it - uncovering a coin, fragment
+    // or tool by digging near it is never enough on its own
+    var itemReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
+    for (var ii = 0; ii < run.layer.items.length; ii++) {
+      var itTap = run.layer.items[ii];
+      if (itTap.taken || itTap.kind === 'switch' || integrityAt(itTap.x, itTap.y) > itemReveal) continue;
+      var ip = toPx(itTap.x, itTap.y);
+      if (DIG.dist(raw.x, raw.y, ip.x, ip.y) <= view.cell * 2.4) { collect(itTap); return; }
     }
     if (run.seamRevealed) {
       var sp = toPx(run.layer.target.x, run.layer.target.y);
@@ -2754,14 +2776,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.cutPath = [];
   });
   cv.addEventListener('pointermove', function (ev) {
-    if (!input.down) return;
+    if (!input.down || ev.pointerId !== activePointerId) return;
     ev.preventDefault();
     var raw2 = rawPoint(ev);
     input.rawX = raw2.x; input.rawY = raw2.y;
     input.x = raw2.x; input.y = raw2.y - THUMB_OFFSET;
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (e) {
-    cv.addEventListener(e, function () {
+    cv.addEventListener(e, function (ev) {
+      if (ev.pointerId !== activePointerId) return;
+      activePointerId = null;
       input.down = false; input.hasLast = false;
       if (run) {
         run.cutPath = [];
@@ -2772,6 +2796,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         }
       }
     });
+  });
+  // Safari fires these non-standard gesture events for a pinch even where
+  // touch-action:none already blocks the standard touch path; swallow them too
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (e) {
+    cv.addEventListener(e, function (ev) { ev.preventDefault(); });
   });
 
   $('toolBtn').addEventListener('click', function () { wheelOpen ? closeWheel() : openWheel(); });

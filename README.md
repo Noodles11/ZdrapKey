@@ -108,10 +108,12 @@ drops the hand from the mix first.
 
 Drag with the scissors equipped and it cuts a thin line, same as any other
 tool. On paper-like crust — Cardboard, so far — closing that line into a loop
-pops the whole interior out instantly, integrity and loot alike; a mine or
-live circuit caught inside reacts exactly as if you'd uncovered it with any
-other tool. On every other material the loop trick simply doesn't work: the
-scissors just cut their usual thin line, nothing more.
+pops the whole interior out instantly, integrity and loot alike — closing the
+loop is itself the explicit action, so this is the one case where loot doesn't
+need a separate tap. A mine or live circuit caught inside reacts exactly as
+if you'd uncovered it with any other tool. On every other material the loop
+trick simply doesn't work: the scissors just cut their usual thin line,
+nothing more.
 
 ## Hazards
 
@@ -149,10 +151,12 @@ Density and lethality rise with depth. The vault carries none.
 
 ## Collectibles
 
-Currency is picked up instantly with a short flourish and shows in the HUD.
-Progress fragments belong to numbered sets and are collected **silently** —
-they are only revealed and tallied in the run report. Completing a set is a
-permanent unlock:
+Nothing is picked up just by uncovering it. Once digging has thinned the crust
+enough to expose a coin, fragment or tool, a pulsing ring invites a tap — only
+that tap actually loots it, with a short flourish and a HUD update. Progress
+fragments belong to numbered sets and are still collected **silently** once
+tapped — they are only revealed and tallied in the run report. Completing a
+set is a permanent unlock:
 
 | set | reward |
 | --- | --- |
