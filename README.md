@@ -60,7 +60,7 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | Worn Coin | 2.4 | wedge | ×1.5 | 1 | fine edge, safe on fragile crust |
 | Wire Brush | 5.6 | bar | ×1.6 | 3 | wide sweep, shatters fragile loot |
 | Cold Chisel | 2.8 | wedge | ×3.2 | 5 | one of the two ways into obsidian |
-| Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits |
+| Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits, pings nearby mines |
 | Core Drill | 3.6 | round | ×6.0 | 15 | punches anything, wakes mines early |
 | Dissolving Spray | 4.4 | gradient | ×2.1 | 1 | wide, soft-edged mist — earned, never found |
 
@@ -74,7 +74,12 @@ within three layers of the gate, so a descent can never dead-end.
 ## Hazards
 
 - **Mines** end the run the moment their core is uncovered. The Core Drill sets
-  them off at roughly twice the remaining cover.
+  them off at roughly twice the remaining cover. Every mine sits under a red
+  warning aura, buried at the same depth as the mine itself and wider than its
+  icon, so scratching anywhere nearby shows a red hint before you reach the
+  core. The aura shrinks the deeper you go, giving far less notice late in a
+  descent. The Insulated Probe periodically pings, briefly showing every
+  nearby mine's aura straight through solid crust.
 - **Live circuits** end the run if you scratch across one where the crust is
   already thin. The Insulated Probe shorts them out instead, and pays for it.
 

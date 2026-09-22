@@ -197,7 +197,8 @@
       channel end to end instead.<br><br>
       Leftover crust you never touched is forgotten once you move on &mdash; nothing carries over unless you
       scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
-      currency. <b>Bail</b> between layers to keep everything.<br><br>
+      currency. <b>Bail</b> between layers to keep everything. Every mine hides under a red warning aura wider
+      than the mine itself, so you'll see red before you reach the core &mdash; it shrinks the deeper you go.<br><br>
       Dirt layers sometimes have small bugs wandering across them. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
       <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.
@@ -306,6 +307,7 @@ var DIG = (function () {
   // power    : multiplier over the bare hand
   // minDepth : cannot be equipped shallower than this
   // reward   : true if only obtainable as a milestone reward, never buried
+  // detectsHazards : true if equipping it periodically flashes nearby mines
   var TOOLS = [
     { id:'hand',   name:'Bare Hand',      radius:3.6, shape:'round', power:1.0, minDepth:1,
       note:'Always available. Never breaks.' },
@@ -316,7 +318,7 @@ var DIG = (function () {
     { id:'chisel', name:'Cold Chisel',    radius:2.8, shape:'wedge', power:3.2, minDepth:5,
       note:'Bites obsidian and plating.' },
     { id:'probe',  name:'Insulated Probe',radius:2.8, shape:'round', power:2.0, minDepth:8,
-      note:'Dead-shorts live circuits.' },
+      detectsHazards:true, note:'Dead-shorts live circuits. Pings nearby mines.' },
     { id:'drill',  name:'Core Drill',     radius:3.6, shape:'round', power:6.0, minDepth:15,
       note:'Punches anything. Wakes mines early.' },
     { id:'spray',  name:'Dissolving Spray', radius:4.4, shape:'gradient', power:2.1, minDepth:1,
@@ -1124,6 +1126,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.warned = false;
     run.revealedCircuits = {};
     run.seamRevealed = false;
+    run.detectTimer = 0;
+    run.detectPulse = 0;
     input.hasLast = false;
     // a tool that can no longer be equipped at this depth falls back to the hand
     var t = DIG.TOOL_BY_ID[run.tool];
@@ -1172,6 +1176,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       if (ny < margin || ny > GH - margin) { b.a = -b.a; ny = b.y; }
       b.x = nx; b.y = ny;
     }
+  }
+
+  // tools with detectsHazards ping every DETECT_INTERVAL seconds, briefly
+  // showing mine auras through solid crust for DETECT_FADE seconds
+  var DETECT_INTERVAL = 5, DETECT_FADE = 1.2;
+  function stepDetection(dt) {
+    var tool = DIG.TOOL_BY_ID[run.tool];
+    if (tool && tool.detectsHazards) {
+      run.detectTimer += dt;
+      if (run.detectTimer >= DETECT_INTERVAL) { run.detectTimer = 0; run.detectPulse = 1; }
+    }
+    if (run.detectPulse > 0) run.detectPulse = Math.max(0, run.detectPulse - dt / DETECT_FADE);
   }
 
   /* ------------------------------------------------------------ material */
@@ -1606,6 +1622,24 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   /* ------------------------------------------------------------ rendering */
+  // the warning aura shrinks toward a floor as depth increases, so deep
+  // mines give far less notice than shallow ones
+  var AURA_MAX = 9.0, AURA_MIN = 3.2, AURA_K = 14;
+  function auraRadiusForDepth(depth) {
+    return AURA_MIN + (AURA_MAX - AURA_MIN) * Math.exp(-(depth - 1) / AURA_K);
+  }
+  function drawMineAura(c, mz, depth, alpha) {
+    var p = toPx(mz.x, mz.y), R = auraRadiusForDepth(depth) * view.cell;
+    var g = c.createRadialGradient(p.x, p.y, R * 0.12, p.x, p.y, R);
+    g.addColorStop(0, 'rgba(213,94,0,' + (0.5 * alpha) + ')');
+    g.addColorStop(0.65, 'rgba(213,94,0,' + (0.2 * alpha) + ')');
+    g.addColorStop(1, 'rgba(213,94,0,0)');
+    c.save();
+    c.fillStyle = g;
+    c.beginPath(); c.arc(p.x, p.y, R, 0, 6.2832); c.fill();
+    c.restore();
+  }
+
   function drawBuried() {
     var L = run.layer, i;
 
@@ -1640,6 +1674,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         ctx.setLineDash([]);
       }
       ctx.restore();
+    }
+
+    // mines: a red warning aura, buried under the crust like the mine itself,
+    // sized wider than the mine's own icon so an early pass at the crust
+    // above it shows red before the player is anywhere near the core
+    for (i = 0; i < L.hazards.length; i++) {
+      var mz = L.hazards[i];
+      if (mz.kind !== 'mine' || mz.dead) continue;
+      drawMineAura(ctx, mz, L.depth, 1);
     }
 
     // mines: concentric ring + spikes
@@ -1822,6 +1865,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
     drawBugs();
 
+    // a detecting tool briefly shows mine auras straight through solid crust
+    if (run.detectPulse > 0) {
+      var L3 = run.layer;
+      for (var mi = 0; mi < L3.hazards.length; mi++) {
+        var mz2 = L3.hazards[mi];
+        if (mz2.kind === 'mine' && !mz2.dead) drawMineAura(ctx, mz2, L3.depth, run.detectPulse);
+      }
+    }
+
     // particles + floaters
     for (var i = 0; i < fx.length; i++) {
       var f = fx[i], k2 = 1 - f.t / f.life;
@@ -1886,6 +1938,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       }
       if (run.collapsing) run.collapsing = Math.min(1, run.collapsing + dt);
       if (phase === 'dig' && run.bugs && run.bugs.length && !wheelOpen) stepBugs(dt);
+      if (phase === 'dig' && !wheelOpen) stepDetection(dt);
       stepFx(dt);
       render();
     }
@@ -1959,6 +2012,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function equip(id) {
     run.tool = id;
     input.hasLast = false;
+    if (DIG.TOOL_BY_ID[id].detectsHazards) { run.detectTimer = 0; run.detectPulse = 1; }
     syncToolBtn();
     buzz(10);
     banner(DIG.TOOL_BY_ID[id].name.toUpperCase() + ' EQUIPPED');
