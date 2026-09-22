@@ -37,6 +37,13 @@ A run ends in exactly one of three ways:
 Currency, tools and fragment-set unlocks persist across runs. Dying never
 touches the permanent bank or the sets.
 
+However a run ends, its report screen is set against a heatmap of every
+layer that run actually cleared — every cell weighted by how many times a
+stroke passed over it, cool blue through to a hot ember orange, faded in
+behind the report itself. A layer abandoned mid-dig to a death or a bail
+never makes it into the picture; only what got fully cleared, skipped or
+fallen through does. It's rebuilt fresh for every run.
+
 ## Test mode
 
 **Test mode**, from the title screen, is a sandbox: pick any surface in the
