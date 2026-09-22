@@ -2182,29 +2182,35 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   /* ------------------------------------------------------------ input */
-  // the working point is lifted above the raw touch so a thumb resting on
-  // the glass doesn't sit on top of what it's actually doing
+  // a swipe's working point is lifted above the raw touch so a thumb resting
+  // on the glass doesn't sit on top of what it's actually digging; a tap
+  // (the star, a bug) is a deliberate point and stays exactly where pressed
   var THUMB_OFFSET = 46;
-  function local(ev) {
+  function rawPoint(ev) {
     var r = cv.getBoundingClientRect();
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top - THUMB_OFFSET };
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+  function shiftedPoint(ev) {
+    var p = rawPoint(ev);
+    return { x: p.x, y: p.y - THUMB_OFFSET };
   }
   cv.addEventListener('pointerdown', function (ev) {
     if (phase !== 'dig' || wheelOpen) return;
     ev.preventDefault();
-    var p = local(ev);
+    var raw = rawPoint(ev);
     if (run.bugs && run.bugs.length) {
       for (var bi = 0; bi < run.bugs.length; bi++) {
         var b = run.bugs[bi];
         if (!b.alive) continue;
         var bp = toPx(b.x, b.y);
-        if (DIG.dist(p.x, p.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
+        if (DIG.dist(raw.x, raw.y, bp.x, bp.y) <= view.cell * b.r * 2.6) { killBug(b); return; }
       }
     }
     if (run.seamRevealed) {
       var sp = toPx(run.layer.target.x, run.layer.target.y);
-      if (DIG.dist(p.x, p.y, sp.x, sp.y) <= view.cell * 3.2) { clearLayer('seam'); return; }
+      if (DIG.dist(raw.x, raw.y, sp.x, sp.y) <= view.cell * 3.2) { clearLayer('seam'); return; }
     }
+    var p = shiftedPoint(ev);
     cv.setPointerCapture(ev.pointerId);
     input.down = true; input.x = p.x; input.y = p.y;
     input.lx = p.x; input.ly = p.y; input.hasLast = true;
@@ -2213,7 +2219,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   cv.addEventListener('pointermove', function (ev) {
     if (!input.down) return;
     ev.preventDefault();
-    var p = local(ev);
+    var p = shiftedPoint(ev);
     input.x = p.x; input.y = p.y;
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (e) {
