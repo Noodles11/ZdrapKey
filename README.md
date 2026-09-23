@@ -104,6 +104,11 @@ falls rather than one uniform sheet, cascading roughly together but each
 column on its own schedule. A mine or the seam can end up freshly exposed, or
 freshly reburied, depending on where the sand settles.
 
+Every other material scratches away with a soft-edged fade at the tool's
+radius, but granular ground never does — the dig itself has a hard cutoff and
+renders with a crisp, blocky edge instead of a blur, so a hole in sand or
+gravel always reads as a sharp boundary rather than a gradient.
+
 Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 **Swarm Nest**, into the deep cycle.
 
