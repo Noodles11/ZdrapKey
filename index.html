@@ -1305,6 +1305,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     matCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     tmpCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // setting canvas.width/height (just above) resets the whole context,
+    // smoothing included, so it has to be turned back off here every time -
+    // every surface upscales from a lower-res buffer without any blur added
+    // on top of it; underlying gradients (soft-edge digging, mask alpha,
+    // material grain) are computed as real data, not faked with a blur
+    ctx.imageSmoothingEnabled = false;
+    matCtx.imageSmoothingEnabled = false;
+    tmpCtx.imageSmoothingEnabled = false;
+    maskCtx.imageSmoothingEnabled = false;
     if (run && run.layer) paintMaterial();
   }
   window.addEventListener('resize', resize);
@@ -3438,7 +3447,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       tmpCtx.clearRect(0, 0, view.w, view.h);
       tmpCtx.drawImage(matCv, 0, 0, view.w, view.h);
       tmpCtx.globalCompositeOperation = 'destination-in';
-      tmpCtx.imageSmoothingEnabled = true;
       tmpCtx.drawImage(maskCv, 0, 0, view.w, view.h);
       tmpCtx.globalCompositeOperation = 'source-over';
       if (run.layer.material.liquid) {
