@@ -1,4 +1,4 @@
-# Deep Dig
+# ZdrapKey
 
 A mobile-first, portrait, single-player, offline infinite-descent digging game.
 Two files, no build step, no network, no dependencies:
