@@ -201,9 +201,10 @@ The two differ only in how tough they are. **Meteorite** only yields to the
 enough — anything weaker just bounces off with a spark), and a plate takes
 two splits before a tap pops it. **Glass** gives way to any tool at all and
 pops after just one split — the same mechanic, with much less resistance.
-Glass also renders mostly transparent rather than a solid fill, so the void
-behind the shell — and any nearby plate breaking off — actually reads through
-it instead of looking like painted rock.
+Glass also renders mostly transparent rather than a solid fill — both the
+whole shell and any loose broken-off fragments — so the real ground and any
+loot still buried underneath it actually read through, instead of it looking
+like painted rock. Meteorite stays a solid, opaque shell floating in space.
 
 ## Liquid surfaces: Water
 

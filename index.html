@@ -308,7 +308,8 @@
       pieces around &mdash; it never breaks anything. The seam turns up once the plate that used to sit over
       it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite
       into it, and a plate takes two splits before it pops. Glass gives way to any tool at all, pops after
-      just one, and renders mostly see-through so what's behind the shell shows through it.<br><br>
+      just one, and both whole and broken glass render mostly see-through, so the ground and any loot
+      still buried underneath actually show through instead of looking like painted rock.<br><br>
       <b>Water</b> only ever appears once you already own a <b>Spoon</b> or a <b>Vacuum Cleaner</b>
       &mdash; every other tool barely bites it. Scooping it never punches a hole: the whole layer just
       grows more translucent together, letting the seam and loot ghost through, but none of it can
@@ -459,9 +460,9 @@ var DIG = (function () {
                  shatter:true, requires:['chisel','drill'] },
     // the same tap-apart shell as meteorite, but nowhere near as tough: any
     // tool cracks it, and a plate pops after just one split instead of two.
-    // transparent: renders mostly see-through instead of a solid fill, so
-    // whatever's behind the shell (the void, or a plate breaking off nearby)
-    // actually reads through the glass instead of it looking like painted rock
+    // transparent: renders mostly see-through - whole and broken alike - with
+    // real ground and buried loot underneath instead of empty space, so it
+    // actually reads as glass over something instead of painted rock
     glass:     { id:'glass',     name:'Glass',      mult:1.45, color:'#1F435C', grain:'#051119', fragile:false,
                  shatter:true, shatterLevels:1, transparent:true },
     // only ever generated for a player who already carries a Spoon or a
@@ -2001,20 +2002,78 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
   }
 
+  // a transparent shell (Glass) has real ground under it, not empty space -
+  // the same substrate and buried loot as any ordinary crust, so there's
+  // something to actually see once a plate is thin/broken enough to show it
+  function drawGhostLoot() {
+    var L = run.layer, cell = view.cell, i;
+    var g = ctx.createLinearGradient(0, 0, 0, view.h);
+    g.addColorStop(0, DIG.SUBSTRATE_COLORS[0]); g.addColorStop(1, DIG.SUBSTRATE_COLORS[1]);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h);
+    for (i = 0; i < L.items.length; i++) {
+      var it = L.items[i];
+      if (it.taken) continue;
+      var q = toPx(it.x, it.y);
+      ctx.save(); ctx.translate(q.x, q.y);
+      if (it.kind === 'coin') {
+        ctx.fillStyle = DIG.SIGNAL_COLORS.coin;
+        ctx.beginPath(); ctx.arc(0, 0, cell * 1.25, 0, 6.2832); ctx.fill();
+        ctx.strokeStyle = '#7a7012'; ctx.lineWidth = cell * 0.22;
+        ctx.beginPath(); ctx.arc(0, 0, cell * 0.66, 0, 6.2832); ctx.stroke();
+      } else if (it.kind === 'fragment') {
+        ctx.fillStyle = DIG.SIGNAL_COLORS.fragment;
+        ctx.beginPath();
+        ctx.moveTo(0, -cell * 1.5); ctx.lineTo(cell * 1.35, 0);
+        ctx.lineTo(0, cell * 1.5); ctx.lineTo(-cell * 1.35, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#04241b';
+        ctx.beginPath(); ctx.arc(0, 0, cell * 0.4, 0, 6.2832); ctx.fill();
+      } else if (it.kind === 'switch') {
+        ctx.fillStyle = DIG.SIGNAL_COLORS.switch;
+        ctx.fillRect(-cell, -cell, cell * 2, cell * 2);
+        ctx.strokeStyle = '#0a0a12';
+        ctx.lineWidth = cell * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(-cell * 0.7, -cell * 0.7); ctx.lineTo(cell * 0.7, cell * 0.7);
+        ctx.moveTo(cell * 0.7, -cell * 0.7); ctx.lineTo(-cell * 0.7, cell * 0.7);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = DIG.SIGNAL_COLORS.tool;
+        ctx.beginPath();
+        for (var v = 0; v < 6; v++) {
+          var aa = -Math.PI / 2 + v * Math.PI / 3;
+          var fx2 = Math.cos(aa) * cell * 1.6, fy2 = Math.sin(aa) * cell * 1.6;
+          v ? ctx.lineTo(fx2, fy2) : ctx.moveTo(fx2, fy2);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#2b0d21';
+        ctx.fillRect(-cell * 0.2, -cell * 0.85, cell * 0.4, cell * 1.7);
+      }
+      ctx.restore();
+    }
+  }
+
   function drawMeteorField() {
     var w = view.w, h = view.h, cell = view.cell;
-    ctx.fillStyle = '#05060c'; ctx.fillRect(0, 0, w, h);
-    // a deterministic starfield so it never swims between frames or reloads
-    var srng = DIG.rngFor(run.seed, run.layer.depth, 'stars');
-    for (var s = 0; s < 80; s++) {
-      var sx = srng() * w, sy = srng() * h, sr = 0.5 + srng() * 1.3;
-      ctx.globalAlpha = 0.25 + srng() * 0.5;
-      ctx.fillStyle = '#dfe6ff';
-      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.2832); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
     var m = run.layer.material, shards = run.meteorShards, i, k;
+
+    if (m.transparent) {
+      // a transparent shell has actual ground - not empty space - sitting
+      // under it, same substrate and buried loot as any ordinary crust, so
+      // there's something real to see once the glass thins enough to show it
+      drawGhostLoot();
+    } else {
+      ctx.fillStyle = '#05060c'; ctx.fillRect(0, 0, w, h);
+      // a deterministic starfield so it never swims between frames or reloads
+      var srng = DIG.rngFor(run.seed, run.layer.depth, 'stars');
+      for (var s = 0; s < 80; s++) {
+        var sx = srng() * w, sy = srng() * h, sr = 0.5 + srng() * 1.3;
+        ctx.globalAlpha = 0.25 + srng() * 0.5;
+        ctx.fillStyle = '#dfe6ff';
+        ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.2832); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
 
     // whole, untouched plates sit edge-to-edge with no stroke between them,
     // but filling each one separately still leaves a hairline anti-aliasing
@@ -2032,7 +2091,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.closePath();
     }
     ctx.fillStyle = m.color;
-    ctx.globalAlpha = m.transparent ? 0.32 : 1;
+    ctx.globalAlpha = m.transparent ? 0.16 : 1;
     ctx.fill();
     ctx.globalAlpha = 1;
 
@@ -2046,7 +2105,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(sh.rot);
-      ctx.globalAlpha = m.transparent ? 0.32 : 1;
+      ctx.globalAlpha = m.transparent ? 0.16 : 1;
       ctx.beginPath();
       for (k = 0; k < 3; k++) {
         var vx = (sh.v[k].x - sh.cx) * MET_PAD * cell, vy = (sh.v[k].y - sh.cy) * MET_PAD * cell;
@@ -2055,6 +2114,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.closePath();
       ctx.fillStyle = m.color;
       ctx.fill();
+      if (m.transparent) {
+        // loose glass fragments are real, separated shapes with empty space
+        // around them, so a thin rim reads as a glassy edge, not a seam -
+        // it keeps a nearly-invisible fill still legible as a floating shard
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, cell * 0.05);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
