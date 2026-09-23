@@ -82,15 +82,15 @@ A "clear loadout" option refunds anything bought but not yet spent on a run.
 
 Depths 1–9 walk a fixed sequence, softest first: Topsoil, Cardboard, Sand, Clay,
 Gravel, Chalk, Shale, Sandstone, Limestone. After that the layers cycle Basalt →
-Granite → Quartzite → Obsidian → Ferrolith → Meteorite, getting harder each time
-around. Hardness approaches a ceiling asymptotically rather than growing without
-bound.
+Granite → Quartzite → Obsidian → Ferrolith → Meteorite → Glass, getting harder
+each time around. Hardness approaches a ceiling asymptotically rather than
+growing without bound.
 
 Obsidian, Ferrolith and reinforced plating can only be worked with specific
 tools. Quartzite is **fragile**: dig far enough and the floor gives way
 mid-layer — a scripted fall-through that costs you the layer's remaining loot
 but not the run. Chalk is soft rock, not fragile — it never collapses.
-Meteorite doesn't work like the rest at all — see below.
+Meteorite and Glass don't work like the rest at all — see below.
 
 Topsoil, Cardboard, Sand, Clay and Chalk are all **soft** ground — loose or
 crumbly enough for the Sponge to wipe away in wide strokes.
@@ -159,22 +159,22 @@ if you'd uncovered it with any other tool. On every other material the loop
 trick simply doesn't work: the scissors just cut their usual thin line,
 nothing more.
 
-## Meteorite: a different kind of layer
+## Shatter surfaces: Meteorite and Glass
 
-Meteorite, out in the deep cycle, isn't crust at all — there's nothing to
-scratch away. Instead the whole layer is a solid shell of triangular plates,
-floating in space, that only the **Cold Chisel** or **Core Drill** can bite
-into (carrying either as part of a combo is enough). Anything weaker just
-bounces off with a spark.
+Meteorite and Glass, out in the deep cycle, aren't crust at all — there's
+nothing to scratch away. Instead the whole layer is a solid shell of
+triangular plates. Whole, unbroken plates sit edge to edge with no seam drawn
+between them; the shell reads as one continuous surface until a plate
+actually breaks off, at which point the gap it leaves is the only thing that
+shows the pieces have separated.
 
 Tap a still-solid plate and it splits into four smaller ones with a gap
 opened up between them — those four are now **loose**: they drift slowly,
 spin, and bounce off any other loose piece they touch, forever, until
 something happens to them. Tap a loose piece again and it splits the same
-way, smaller still. Once a piece is small enough — three splits down from
-where it started — a tap **pops** it instead of splitting it, and it's gone
-for good, with anything buried in that exact patch of rock (a coin, a
-fragment, a tool) coming free right along with it.
+way, smaller still, until it's small enough to **pop** instead — gone for
+good, with anything buried in that exact patch (a coin, a fragment, a tool)
+coming free right along with it.
 
 A **swipe** never breaks or pops anything, however hard or fast it drags
 across the field — it only shoves nearby loose pieces a little further in
@@ -183,8 +183,14 @@ the direction it's moving.
 There's still a seam buried somewhere in the shell, same as any other layer.
 It has no crust to thin, so instead it turns up the moment the one plate that
 used to sit over it has finally been popped away — everything else in the
-field can be left whole. Meteorite carries none of the usual mines or live
+field can be left whole. Neither material carries the usual mines or live
 circuits.
+
+The two differ only in how tough they are. **Meteorite** only yields to the
+**Cold Chisel** or **Core Drill** (carrying either as part of a combo is
+enough — anything weaker just bounces off with a spark), and a plate takes
+two splits before a tap pops it. **Glass** gives way to any tool at all and
+pops after just one split — the same mechanic, with much less resistance.
 
 ## Hazards
 

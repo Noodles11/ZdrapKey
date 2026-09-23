@@ -299,12 +299,14 @@
       <b>Scissors</b> cut a thin line like any tool. On paper-like crust &mdash; Cardboard, so far &mdash;
       closing that line into a loop pops the whole inside out instantly, loot included. On anything else
       the loop trick just doesn't work: they're a plain blade there.<br><br>
-      <b>Meteorite</b> layers, out in the deep cycle, have no crust to scratch at all &mdash; just a solid
-      shell of triangular plates, and only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite into one.
-      Tap a plate to break it into four smaller ones with a gap between them; those loose pieces drift and
-      bounce off each other until a tap on one small enough pops it away for good. Swiping only shoves loose
-      pieces around &mdash; it never breaks anything. The seam turns up once the plate that used to sit over
-      it has been popped away.<br><br>
+      <b>Meteorite</b> and <b>Glass</b> layers, out in the deep cycle, have no crust to scratch at all
+      &mdash; just a solid shell of triangular plates, with no seams drawn between them until one actually
+      breaks off. Tap a plate to break it into four smaller ones with a gap between them; those loose pieces
+      drift and bounce off each other until a tap on one small enough pops it away for good. Swiping only
+      shoves loose pieces around &mdash; it never breaks anything. The seam turns up once the plate that
+      used to sit over it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or
+      <b>Core Drill</b> can bite into it, and a plate takes two splits before it pops. Glass gives way to
+      any tool at all, and pops after just one.<br><br>
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
@@ -400,6 +402,11 @@ var DIG = (function () {
   // soft      : loose enough for the Sponge to wipe away at full effect
   // granular  : loose enough to obey gravity, column by column - any gap
   //             with ground still above it eventually brings that ground down
+  // shatter   : no crust to scratch at all - a shell of triangular plates,
+  //             tapped apart piece by piece instead. shatterLevels sets how
+  //             many taps deep a plate splits before a tap pops it instead
+  //             (default 2); requires gates which tools can break it at all,
+  //             same as any other material - omit it and any tool will do
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
@@ -428,11 +435,15 @@ var DIG = (function () {
     // a wholly different surface: a solid fractal shell of triangular plates
     // floating in space, tapped apart piece by piece instead of scratched away
     meteorite: { id:'meteorite', name:'Meteorite',  mult:1.65, color:'#493276', grain:'#231145', fragile:false,
-                 meteor:true, requires:['chisel','drill'] }
+                 shatter:true, requires:['chisel','drill'] },
+    // the same tap-apart shell as meteorite, but nowhere near as tough: any
+    // tool cracks it, and a plate pops after just one split instead of two
+    glass:     { id:'glass',     name:'Glass',      mult:1.45, color:'#1F435C', grain:'#051119', fragile:false,
+                 shatter:true, shatterLevels:1 }
   };
 
   var FIXED_SEQ  = ['topsoil','cardboard','sand','clay','gravel','chalk','shale','sandstone','limestone'];
-  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite'];
+  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite','glass'];
   var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
 
   /* ---------------- tools ---------------- */
@@ -703,9 +714,9 @@ var DIG = (function () {
       path: null
     };
 
-    // a meteorite is smashed apart piece by piece, not scratched away, so it
-    // never carries the usual buried mines or live circuits
-    var counts = mat.meteor ? { mines: 0, circuits: 0 } : hazardCounts(depth, rng);
+    // a shatter surface is smashed apart piece by piece, not scratched away,
+    // so it never carries the usual buried mines or live circuits
+    var counts = mat.shatter ? { mines: 0, circuits: 0 } : hazardCounts(depth, rng);
     var bossClearance = C.SEP.TARGET_HAZARD * 0.65;
 
     /* --- on a boss layer the channel is laid down FIRST, so every hazard that
@@ -1489,14 +1500,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       hz.zapDuration = randRange(hz.zapOn ? CIRCUIT_ON_RANGE : CIRCUIT_OFF_RANGE);
       hz.zapT = Math.random() * hz.zapDuration;
     });
-    // a meteorite has no crust to scratch through at all - it's a shell of
-    // solid triangular plates, built fresh every time the layer loads
-    run.meteorShards = L.material.meteor ? buildMeteorField() : null;
+    // a shatter surface has no crust to scratch through at all - it's a
+    // shell of solid triangular plates, built fresh every time it loads
+    run.meteorShards = L.material.shatter ? buildMeteorField() : null;
     // the material name is imprinted on the crust itself now, so only layers
-    // with something extra to say (vault, boss, meteorite) still get a banner
+    // with something extra to say (vault, boss, shatter) still get a banner
     if (L.isVault) banner('THE VAULT');
     else if (L.isBoss) banner('REINFORCED · TRACE THE CHANNEL');
-    else if (L.material.meteor) banner('METEORITE FIELD · SMASH THROUGH TO THE SEAM');
+    else if (L.material.shatter) banner(L.material.name.toUpperCase() + ' · TAP TO BREAK THROUGH');
   }
 
   function spawnBugs() {
@@ -1702,14 +1713,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     burst(toPx(it.x, it.y), DIG.SIGNAL_COLORS.switch, 30, 4);
   }
 
-  /* ------------------------------------------------------------ meteorite */
-  // No crust to scratch through here: a meteorite is a shell of triangular
-  // plates. Tapping a still-solid plate splits it into four smaller ones with
-  // a gap between them; those loose pieces drift and bounce off each other
-  // forever until a tap on one small enough pops it away for good. A swipe
-  // only shoves loose pieces around - it can never split or pop anything.
-  var MET_CELL = 6;        // grid-cell span of one root triangle pair
-  var MET_MAX_LEVEL = 2;   // 0 = whole root, MET_MAX_LEVEL = smallest, pops on tap
+  /* ------------------------------------------------------------ shatter surfaces */
+  // Shared by every "shatter" material (Meteorite, Glass, ...): no crust to
+  // scratch through at all, just a shell of triangular plates. Tapping a
+  // still-solid plate splits it into four smaller ones with a gap between
+  // them; those loose pieces drift and bounce off each other forever until a
+  // tap on one small enough pops it away for good. A swipe only shoves loose
+  // pieces around - it can never split or pop anything. How tough a surface
+  // is comes entirely from the material: material.requires gates which tools
+  // can break it at all, and material.shatterLevels sets how many taps deep
+  // a plate splits before a tap pops it instead (falls back to 2).
+  var MET_CELL = 6;             // grid-cell span of one root triangle pair
+  var MET_MAX_LEVEL_DEFAULT = 2; // fallback shatterLevels when a material omits it
   var MET_PAD = 0.86;      // loose pieces draw/collide at this fraction of full size
   var MET_DRIFT = 0.5;     // idle drift acceleration, cells/sec^2
   var MET_SWIPE_PUSH = 2.6;  // velocity a swipe imparts on nearby loose pieces
@@ -1849,6 +1864,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     checkMeteorTarget();
   }
 
+  function shatterMaxLevel() {
+    var lv = run.layer.material.shatterLevels;
+    return lv == null ? MET_MAX_LEVEL_DEFAULT : lv;
+  }
+
   function tapMeteor(cellPt) {
     var sh = meteorShardAt(cellPt);
     if (!sh) return;
@@ -1862,7 +1882,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       }
       return;
     }
-    if (sh.level < MET_MAX_LEVEL) splitMeteorShard(sh); else popMeteorShard(sh);
+    if (sh.level < shatterMaxLevel()) splitMeteorShard(sh); else popMeteorShard(sh);
   }
 
   // a swipe only nudges loose pieces near its path - it never splits or
@@ -1935,26 +1955,44 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     ctx.globalAlpha = 1;
 
-    var m = run.layer.material, shards = run.meteorShards;
-    for (var i = 0; i < shards.length; i++) {
-      var sh = shards[i], c = meteorShardCenter(sh), p = toPx(c.x, c.y);
-      var pad = sh.whole ? 1 : MET_PAD;
+    var m = run.layer.material, shards = run.meteorShards, i, k;
+
+    // whole, untouched plates sit edge-to-edge with no stroke between them,
+    // but filling each one separately still leaves a hairline anti-aliasing
+    // seam at every shared edge - drawing them all as one combined path
+    // fills the whole shell as a single continuous shape instead, so no
+    // triangle seams show through it at all until a plate actually breaks off
+    ctx.beginPath();
+    for (i = 0; i < shards.length; i++) {
+      var wsh = shards[i];
+      if (!wsh.whole) continue;
+      for (k = 0; k < 3; k++) {
+        var wp = toPx(wsh.v[k].x, wsh.v[k].y);
+        k ? ctx.lineTo(wp.x, wp.y) : ctx.moveTo(wp.x, wp.y);
+      }
+      ctx.closePath();
+    }
+    ctx.fillStyle = m.color;
+    ctx.fill();
+
+    // loose, broken-off pieces draw individually so their drift, spin and
+    // padding gap all show - there's real empty space between them, not
+    // just a drawn line, so no seam artifact to worry about here
+    for (i = 0; i < shards.length; i++) {
+      var sh = shards[i];
+      if (sh.whole) continue;
+      var c = meteorShardCenter(sh), p = toPx(c.x, c.y);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(sh.rot);
       ctx.beginPath();
-      for (var k = 0; k < 3; k++) {
-        var vx = (sh.v[k].x - sh.cx) * pad * cell, vy = (sh.v[k].y - sh.cy) * pad * cell;
+      for (k = 0; k < 3; k++) {
+        var vx = (sh.v[k].x - sh.cx) * MET_PAD * cell, vy = (sh.v[k].y - sh.cy) * MET_PAD * cell;
         k ? ctx.lineTo(vx, vy) : ctx.moveTo(vx, vy);
       }
       ctx.closePath();
-      ctx.fillStyle = m.color; ctx.fill();
-      ctx.strokeStyle = m.grain; ctx.lineWidth = Math.max(1, cell * 0.12); ctx.stroke();
-      if (!sh.whole) {
-        ctx.strokeStyle = 'rgba(255,255,255,.18)';
-        ctx.lineWidth = Math.max(1, cell * 0.06);
-        ctx.stroke();
-      }
+      ctx.fillStyle = m.color;
+      ctx.fill();
       ctx.restore();
     }
 
@@ -3169,7 +3207,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     }
     ctx.clearRect(-30, -30, view.w + 60, view.h + 60);
 
-    if (run.layer.material.meteor) {
+    if (run.layer.material.shatter) {
       drawMeteorField();
     } else {
       drawBuried();
@@ -3289,7 +3327,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       // colliding the same way
       if (phase === 'dig' && !wheelOpen) {
         stepMines(dt); stepCircuits(dt);
-        if (run.layer.material.meteor) stepMeteor(dt);
+        if (run.layer.material.shatter) stepMeteor(dt);
       }
       if (phase === 'dig' && input.down && !wheelOpen && !run.collapsing) {
         var armedMine = findArmedMineAtRaw();
@@ -3311,7 +3349,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
           resetSwitchHold(null);
           if (!input.hasLast) { input.lx = input.x; input.ly = input.y; input.hasLast = true; }
           run.time += dt;
-          if (run.layer.material.meteor) {
+          if (run.layer.material.shatter) {
             applyMeteorSwipe();
           } else {
             applyStroke(dt);
@@ -3474,7 +3512,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     unlockAudio();
     activePointerId = ev.pointerId;
     var raw = rawPoint(ev);
-    if (run.layer.material.meteor) {
+    if (run.layer.material.shatter) {
       // a meteorite has no bugs and no crust-buried loot to reveal by
       // digging - just the shell of plates itself, tapped exactly where
       // pressed like any other deliberate tap
