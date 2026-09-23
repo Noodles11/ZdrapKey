@@ -178,17 +178,20 @@ one plate directly under your thumb — a single tap can split or pop several
 neighboring plates at once. Each affected plate that's still whole splits
 into four smaller ones with a gap opened up between them — one of those four
 always shears off and pops instantly on the spot, gone for good before it
-even has a chance to drift, while the other three are now **loose**: they
-drift slowly, spin, and bounce off any other loose piece they touch, forever,
-until something happens to them. Tap a loose piece again (or catch it in
-another tap's blast radius) and it splits the same way, smaller still, until
-it's small enough to **pop** outright instead — gone for good, with anything
-buried in that exact patch (a coin, a fragment, a tool) coming free right
-along with it.
+even has a chance to drift, while the other three are now **loose**. Tap a
+loose piece again (or catch it in another tap's blast radius) and it splits
+the same way, smaller still, until it's small enough to **pop** outright
+instead — gone for good, with anything buried in that exact patch (a coin, a
+fragment, a tool) coming free right along with it.
 
 A **swipe** never breaks or pops anything, however hard or fast it drags
 across the field — it only shoves nearby loose pieces a little further in
-the direction it's moving.
+the direction it's moving. In **Meteorite**, loose pieces also drift and
+spin on their own, tumbling gently and bouncing off each other forever until
+something happens to them, the way real debris would in zero gravity. In
+**Glass**, a loose piece just sits exactly where it cracked — no idle drift
+or spin — until a swipe deliberately nudges it, after which it settles back
+to rest.
 
 There's still a seam buried somewhere in the shell, same as any other layer.
 It has no crust to thin, so instead it turns up the moment the one plate that

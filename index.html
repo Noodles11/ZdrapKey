@@ -303,13 +303,14 @@
       &mdash; just a solid shell of triangular plates, with no seams drawn between them until one actually
       breaks off. A tap breaks everything in a small radius around it, not just one plate: each whole plate
       it catches splits into four smaller ones with a gap between them, and one of those four always shears
-      off and pops instantly, gone before it can even drift. The other three are loose and drift and bounce
-      off each other until a tap catches one small enough to pop it away for good. Swiping only shoves loose
-      pieces around &mdash; it never breaks anything. The seam turns up once the plate that used to sit over
-      it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite
-      into it, and a plate takes two splits before it pops. Glass gives way to any tool at all, pops after
-      just one, and both whole and broken glass render mostly see-through, so the ground and any loot
-      still buried underneath actually show through instead of looking like painted rock.<br><br>
+      off and pops instantly, gone before it can even drift. The other three are loose until a tap catches
+      one small enough to pop it away for good. Swiping only shoves loose pieces around &mdash; it never
+      breaks anything. The seam turns up once the plate that used to sit over it has been popped away.
+      Meteorite is tough: only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite into it, a plate takes
+      two splits before it pops, and its loose pieces drift and spin on their own like debris in zero
+      gravity. Glass gives way to any tool at all, pops after just one, renders mostly see-through so the
+      ground and loot underneath show through, and its loose pieces never move on their own &mdash; they
+      just sit where they cracked until a swipe nudges them.<br><br>
       <b>Water</b> only ever appears once you already own a <b>Spoon</b> or a <b>Vacuum Cleaner</b>
       &mdash; every other tool barely bites it. Scooping it never punches a hole: the whole layer just
       grows more translucent together, letting the seam and loot ghost through, but none of it can
@@ -429,6 +430,9 @@ var DIG = (function () {
   //             the centre of the field - dig the top-left corner and the
   //             bottom-right corner wears away too, same tool, same motion,
   //             reversed. Ordinary crust otherwise - any tool works normally
+  // noDrift   : shatter material only - loose broken pieces stay exactly
+  //             where they cracked instead of tumbling and spinning on their
+  //             own; a swipe can still shove them, same as any other shatter
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
@@ -463,8 +467,10 @@ var DIG = (function () {
     // transparent: renders mostly see-through - whole and broken alike - with
     // real ground and buried loot underneath instead of empty space, so it
     // actually reads as glass over something instead of painted rock
+    // noDrift: unlike meteorite tumbling in space, broken glass just sits
+    // where it cracked - no idle drift or spin, only a swipe moves it at all
     glass:     { id:'glass',     name:'Glass',      mult:1.45, color:'#1F435C', grain:'#051119', fragile:false,
-                 shatter:true, shatterLevels:1, transparent:true },
+                 shatter:true, shatterLevels:1, transparent:true, noDrift:true },
     // only ever generated for a player who already carries a Spoon or a
     // Vacuum Cleaner - see the liquidUnlocked plumbing through genLayer
     water:     { id:'water',     name:'Water',      mult:0.85, color:'#3A4D78', grain:'#0D1426', fragile:false,
@@ -1894,13 +1900,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     // instead of drifting - a break is never perfectly clean, so debris is
     // lost with every single split, not just once a piece gets small enough
     var goneIdx = Math.floor(Math.random() * kids.length);
+    var noDrift = run.layer.material.noDrift;
     kids.forEach(function (kid, ki) {
       if (ki === goneIdx) { popMeteorShard(kid); return; }
-      var kc = meteorCentroid(kid.v);
-      var ang = Math.atan2(kc.y - sh.cy, kc.x - sh.cx) || Math.random() * 6.2832;
-      var sp = 0.6 + Math.random() * 0.5;
-      kid.vx = Math.cos(ang) * sp; kid.vy = Math.sin(ang) * sp;
-      kid.rotV = (Math.random() - 0.5) * 1.6;
+      // noDrift material: leave it at rest exactly where it cracked - the
+      // shrink-to-centroid in drawMeteorField already opens the gap between
+      // pieces, no outward burst needed
+      if (!noDrift) {
+        var kc = meteorCentroid(kid.v);
+        var ang = Math.atan2(kc.y - sh.cy, kc.x - sh.cx) || Math.random() * 6.2832;
+        var sp = 0.6 + Math.random() * 0.5;
+        kid.vx = Math.cos(ang) * sp; kid.vy = Math.sin(ang) * sp;
+        kid.rotV = (Math.random() - 0.5) * 1.6;
+      }
       run.meteorShards.push(kid);
     });
     checkMeteorTarget();
@@ -1965,21 +1977,27 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   function stepMeteor(dt) {
-    var shards = run.meteorShards, i;
+    var shards = run.meteorShards, i, noDrift = run.layer.material.noDrift;
     for (i = 0; i < shards.length; i++) {
       var sh = shards[i];
       if (sh.whole) continue;
-      sh.driftA += (Math.random() - 0.5) * 1.4 * dt;
-      sh.vx += Math.cos(sh.driftA) * MET_DRIFT * dt;
-      sh.vy += Math.sin(sh.driftA) * MET_DRIFT * dt;
+      // noDrift material: no idle wandering - a piece only moves if a swipe
+      // actually pushes it, and settles back to rest once that push decays
+      if (!noDrift) {
+        sh.driftA += (Math.random() - 0.5) * 1.4 * dt;
+        sh.vx += Math.cos(sh.driftA) * MET_DRIFT * dt;
+        sh.vy += Math.sin(sh.driftA) * MET_DRIFT * dt;
+      }
       sh.vx *= 0.985; sh.vy *= 0.985;
       sh.ox += sh.vx * dt; sh.oy += sh.vy * dt;
       sh.rot += sh.rotV * dt;
       var dd = Math.sqrt(sh.ox * sh.ox + sh.oy * sh.oy);
       if (dd > 3.5) { sh.ox *= 0.96; sh.oy *= 0.96; sh.vx *= 0.9; sh.vy *= 0.9; }
     }
-    // loose pieces gently push each other apart instead of overlapping
-    for (i = 0; i < shards.length; i++) {
+    // loose pieces gently push each other apart instead of overlapping -
+    // a noDrift material never needs this: its pieces stay exactly where
+    // they cracked, already spaced apart by the render's own centroid shrink
+    for (i = 0; i < shards.length && !noDrift; i++) {
       var a = shards[i];
       if (a.whole) continue;
       var ac = meteorShardCenter(a), ar = meteorShardRadius(a) * MET_PAD;
