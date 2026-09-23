@@ -307,6 +307,10 @@
       used to sit over it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or
       <b>Core Drill</b> can bite into it, and a plate takes two splits before it pops. Glass gives way to
       any tool at all, and pops after just one.<br><br>
+      <b>Water</b> only ever appears once you already own a <b>Spoon</b> or a <b>Vacuum Cleaner</b>
+      &mdash; every other tool barely bites it. Scooping it never punches a hole: the whole layer just
+      grows more translucent together, letting the seam and loot ghost through, but none of it can
+      actually be reached until 90% of the water is gone &mdash; then it all reveals at once.<br><br>
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
@@ -407,6 +411,12 @@ var DIG = (function () {
   //             many taps deep a plate splits before a tap pops it instead
   //             (default 2); requires gates which tools can break it at all,
   //             same as any other material - omit it and any tool will do
+  // liquid    : nothing buried in it - mine, seam, item or switch alike - can
+  //             be reached by exposing it locally like normal crust. It only
+  //             becomes reachable once the whole layer is mostly drained
+  //             (see WATER_REVEAL_FRACTION); scratching it still thins it
+  //             into a see-through gradient the ordinary way, so you can
+  //             watch what's down there before you can actually touch it
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
@@ -439,12 +449,19 @@ var DIG = (function () {
     // the same tap-apart shell as meteorite, but nowhere near as tough: any
     // tool cracks it, and a plate pops after just one split instead of two
     glass:     { id:'glass',     name:'Glass',      mult:1.45, color:'#1F435C', grain:'#051119', fragile:false,
-                 shatter:true, shatterLevels:1 }
+                 shatter:true, shatterLevels:1 },
+    // only ever generated for a player who already carries a Spoon or a
+    // Vacuum Cleaner - see the liquidUnlocked plumbing through genLayer
+    water:     { id:'water',     name:'Water',      mult:0.85, color:'#3A4D78', grain:'#0D1426', fragile:false,
+                 liquid:true, requires:['spoon','vacuum'] }
   };
 
   var FIXED_SEQ  = ['topsoil','cardboard','sand','clay','gravel','chalk','shale','sandstone','limestone'];
   var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite','glass'];
   var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
+  // water only ever joins the rotation for a player who can already clear it
+  var DEEP_CYCLE_LIQUID = DEEP_CYCLE.concat(['water']);
+  var DEEP_CYCLE_LIQUID_BUGS = DEEP_CYCLE_LIQUID.concat(['bugs']);
 
   /* ---------------- tools ---------------- */
   // radius   : removal radius in cells
@@ -459,6 +476,8 @@ var DIG = (function () {
       note:'Always available. Never breaks.' },
     { id:'coin',   name:'Worn Coin',      radius:2.4, shape:'wedge', power:1.5, minDepth:1,
       note:'Fine edge. Safe on fragile crust.' },
+    { id:'spoon',  name:'Spoon',          radius:2.0, shape:'round', power:1.3, minDepth:1,
+      note:'Scoops water out cup by cup. Almost useless on anything solid.' },
     { id:'sponge', name:'Sponge',         radius:6.2, shape:'bar',   power:1.4, minDepth:1,
       note:'Wipes soft ground away in wide strokes. Barely scuffs anything harder.' },
     { id:'scissors', name:'Scissors',     radius:1.2, shape:'wedge', power:1.1, minDepth:2,
@@ -471,6 +490,8 @@ var DIG = (function () {
       detectsHazards:true, note:'Dead-shorts live circuits. Pings nearby mines.' },
     { id:'drill',  name:'Core Drill',     radius:3.6, shape:'round', power:6.0, minDepth:15,
       note:'Punches anything. Wakes mines early.' },
+    { id:'vacuum', name:'Vacuum Cleaner', radius:5.5, shape:'round', power:5.0, minDepth:20,
+      note:'Drains a water layer dry in wide sweeps. The ultimate answer to water.' },
     { id:'spray',  name:'Dissolving Spray', radius:4.4, shape:'gradient', power:2.1, minDepth:1,
       reward:true, note:'A wide, soft-edged mist. Earned, never found.' }
   ];
@@ -548,9 +569,12 @@ var DIG = (function () {
   function isVaultDepth(depth) { return depth === C.DEPTH_CEILING; }
 
   // bugsUnlocked folds the Swarm Nest material into the deep cycle once its
-  // reward has been earned; omitted (or false) it never appears, so every
-  // existing caller that only passes depth keeps its original behaviour.
-  function materialForDepth(depth, bugsUnlocked) {
+  // reward has been earned; liquidUnlocked folds Water in once the player
+  // already carries a Spoon or a Vacuum Cleaner - water can never appear for
+  // anyone who couldn't already clear it. Both omitted (or false) reproduce
+  // the original cycle, so every existing caller that only passes depth
+  // keeps its original behaviour.
+  function materialForDepth(depth, bugsUnlocked, liquidUnlocked) {
     if (isVaultDepth(depth)) return MATERIALS.vault;
     if (isBossDepth(depth)) return MATERIALS.plating;
     if (depth <= FIXED_SEQ.length) return MATERIALS[FIXED_SEQ[depth - 1]];
@@ -559,7 +583,9 @@ var DIG = (function () {
     var bossesPast = Math.floor(depth / C.BOSS_INTERVAL);
     var idx = (past - bossesPast - 1);
     if (idx < 0) idx = 0;
-    var cycle = bugsUnlocked ? DEEP_CYCLE_BUGS : DEEP_CYCLE;
+    var cycle = liquidUnlocked
+      ? (bugsUnlocked ? DEEP_CYCLE_LIQUID_BUGS : DEEP_CYCLE_LIQUID)
+      : (bugsUnlocked ? DEEP_CYCLE_BUGS : DEEP_CYCLE);
     return MATERIALS[cycle[idx % cycle.length]];
   }
 
@@ -571,8 +597,8 @@ var DIG = (function () {
   // Asymptotic: approaches HMAX * mult * deepBoostMax and never exceeds it.
   // matOverride lets a caller (test mode) force hardness for a chosen
   // material instead of whatever would normally occupy this depth.
-  function hardnessForDepth(depth, bugsUnlocked, matOverride) {
-    var mat = matOverride || materialForDepth(depth, bugsUnlocked);
+  function hardnessForDepth(depth, bugsUnlocked, matOverride, liquidUnlocked) {
+    var mat = matOverride || materialForDepth(depth, bugsUnlocked, liquidUnlocked);
     var base = 1 + (C.HMAX - 1) * (1 - Math.exp(-(depth - 1) / 16));
     var cyc = deepCycleIndex(depth);
     var deepBoost = 1 + 0.35 * (1 - Math.exp(-cyc / 3.2));
@@ -692,10 +718,10 @@ var DIG = (function () {
   function genLayer(seed, depth, carry, ctx) {
     ctx = ctx || {};
     var rng = rngFor(seed, depth, 'layer');
-    var mat = ctx.material || materialForDepth(depth, ctx.bugsUnlocked);
+    var mat = ctx.material || materialForDepth(depth, ctx.bugsUnlocked, ctx.liquidUnlocked);
     var boss = ctx.material ? mat.id === 'plating' : isBossDepth(depth);
     var vault = ctx.material ? mat.id === 'vault' : isVaultDepth(depth);
-    var baseHard = hardnessForDepth(depth, ctx.bugsUnlocked, ctx.material);
+    var baseHard = hardnessForDepth(depth, ctx.bugsUnlocked, ctx.material, ctx.liquidUnlocked);
     var carryCapped = Math.max(0, Math.min(baseHard, carry || 0));   // total <= 2x base
 
     var layer = {
@@ -812,7 +838,7 @@ var DIG = (function () {
     // holds the tool for it, so make sure one is buried here.
     var gate = null;
     for (var gd = depth; gd <= depth + 3; gd++) {
-      var gm = materialForDepth(gd, ctx.bugsUnlocked);
+      var gm = materialForDepth(gd, ctx.bugsUnlocked, ctx.liquidUnlocked);
       if (gm.requires) { gate = gm.requires; break; }
     }
     if (gate && ctx.owned) {
@@ -1460,7 +1486,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   function loadLayer(depth) {
     var owned = ownedTools();
     var pool = DIG.TOOLS.map(function (t) { return t.id; }).filter(function (id) { return !owned[id]; });
-    var genCtx = { toolPool: pool, owned: owned, bugsUnlocked: bugsUnlocked() };
+    var liquidUnlocked = !!(owned.spoon || owned.vacuum);
+    var genCtx = { toolPool: pool, owned: owned, bugsUnlocked: bugsUnlocked(), liquidUnlocked: liquidUnlocked };
     // test mode forces the same surface every layer, regardless of depth
     if (run.testMode) genCtx.material = DIG.MATERIALS[run.testMaterialId];
     run.layer = DIG.genLayer(run.seed, depth, run.carry, genCtx);
@@ -1686,7 +1713,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     for (var i = 0; i < L.items.length; i++) {
       var it = L.items[i];
       if (it.kind !== 'switch' || it.taken) continue;
-      if (integrityAt(it.x, it.y) > reveal) continue;
+      if (!isRevealedAt(it.x, it.y, reveal)) continue;
       var p = toPx(it.x, it.y);
       if (DIG.dist(input.rawX, input.rawY, p.x, p.y) <= view.cell * SWITCH_HIT_RADIUS) return it;
     }
@@ -2037,6 +2064,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         matCtx.restore();
       }
       matCtx.globalAlpha = 1;
+    } else if (m.liquid) {
+      // ripple bands instead of speckled grain - water reads as fluid, not rock
+      var wn = Math.round(h / (view.cell * 1.4));
+      matCtx.strokeStyle = m.grain;
+      for (var wi = 0; wi < wn; wi++) {
+        var wy = (wi + 0.5) * (h / wn) + (rng() - 0.5) * view.cell * 0.6;
+        var amp = view.cell * (0.35 + rng() * 0.5), wlen = w / (2 + Math.floor(rng() * 2));
+        matCtx.globalAlpha = 0.12 + rng() * 0.16;
+        matCtx.lineWidth = 1.5 + rng() * 1.5;
+        matCtx.beginPath();
+        for (var wx = 0; wx <= w; wx += 4) {
+          var wyy = wy + Math.sin(wx / wlen * 6.2832) * amp;
+          if (wx === 0) matCtx.moveTo(wx, wyy); else matCtx.lineTo(wx, wyy);
+        }
+        matCtx.stroke();
+      }
+      matCtx.globalAlpha = 1;
     } else {
       var n = Math.round((w * h) / 320);
       matCtx.fillStyle = m.grain;
@@ -2158,6 +2202,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   function clearedFraction() { return run.removed / (GW * GH); }
+
+  // liquid layers don't hide seams/mines/loot behind local thinness - a thin
+  // patch of water is still water. They only give way once the whole layer
+  // has been scooped down to WATER_REVEAL_FRACTION, at which point everything
+  // buried in it counts as revealed at once.
+  var WATER_REVEAL_FRACTION = 0.90;
+  function isRevealedAt(cx, cy, threshold) {
+    if (run.layer.material.liquid) return clearedFraction() >= WATER_REVEAL_FRACTION;
+    return integrityAt(cx, cy) <= threshold;
+  }
 
   function applyStroke(dt) {
     var L = run.layer, tool = activeTool();
@@ -2320,7 +2374,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var hz = L.hazards[i];
       if (hz.kind !== 'mine' || hz.dead || hz.settled || hz.fuseStarted) continue;
       var trip = hasTool('drill') ? C.MINE_TRIGGER_LOUD : C.MINE_TRIGGER;
-      if (integrityAt(hz.x, hz.y) <= trip) armMine(hz);
+      if (isRevealedAt(hz.x, hz.y, trip)) armMine(hz);
     }
 
     // live circuits: crossing the corridor while energized and the crust
@@ -2353,7 +2407,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     // the seam: exposing it only reveals the star. Advancing needs a tap on it.
     if (!L.isBoss && !run.seamRevealed) {
       var rv = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
-      if (integrityAt(L.target.x, L.target.y) <= rv) { revealSeam(); return; }
+      if (isRevealedAt(L.target.x, L.target.y, rv)) { revealSeam(); return; }
     }
 
     // fragile collapse
@@ -2976,7 +3030,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.save(); ctx.translate(q.x, q.y);
       // once uncovered, a pulsing ring invites the tap that actually loots it -
       // nothing is ever picked up by digging near it alone
-      if (it.kind !== 'switch' && integrityAt(it.x, it.y) <= lootReveal) {
+      if (it.kind !== 'switch' && isRevealedAt(it.x, it.y, lootReveal)) {
         var itPulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + itPulse * 0.35) + ')';
@@ -3106,6 +3160,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     // nearest cell instead, so the mask never blurs a hole's edge - it was
     // scratched with a hard-edged tool, so it reads with a hard edge too
     var hard = run.layer.material.granular;
+    // liquid never leaves a discrete "hole" - a scooped patch just gets more
+    // see-through, and the whole surface fades together as the level drops,
+    // rather than punching through in one spot. What's under it stays out of
+    // reach (see isRevealedAt) until the 90% threshold actually clears it.
+    var liquid = run.layer.material.liquid;
+    var liquidFade = liquid ? Math.min(1, clearedFraction() / WATER_REVEAL_FRACTION) : 0;
     for (var j = 0; j < MH; j++) {
       var gy = (j + 0.5) * inv - 0.5;
       var y0, fy, rowB;
@@ -3134,7 +3194,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         var o = (j * MW + i) * 4;
         // black, so the same bitmap doubles as the crust's drop shadow
         d[o] = 0; d[o + 1] = 0; d[o + 2] = 0;
-        d[o + 3] = Math.round(coverAlpha(a) * 255);
+        var cellAlpha = coverAlpha(a) * (liquid ? (1 - liquidFade * 0.85) : 1);
+        d[o + 3] = Math.round(cellAlpha * 255);
       }
     }
     maskCtx.putImageData(maskImg, 0, 0);
@@ -3227,6 +3288,21 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       tmpCtx.imageSmoothingEnabled = true;
       tmpCtx.drawImage(maskCv, 0, 0, view.w, view.h);
       tmpCtx.globalCompositeOperation = 'source-over';
+      if (run.layer.material.liquid) {
+        // a slow diagonal shimmer band, clipped to whatever water is still
+        // there by only drawing where the crust already has coverage
+        tmpCtx.save();
+        tmpCtx.globalCompositeOperation = 'source-atop';
+        var st = performance.now() / 1400;
+        var sg = tmpCtx.createLinearGradient(0, 0, view.w, view.h);
+        var sp = (st % 1 + 1) % 1;
+        sg.addColorStop(Math.max(0, sp - 0.18), 'rgba(255,255,255,0)');
+        sg.addColorStop(sp, 'rgba(255,255,255,.22)');
+        sg.addColorStop(Math.min(1, sp + 0.18), 'rgba(255,255,255,0)');
+        tmpCtx.fillStyle = sg;
+        tmpCtx.fillRect(0, 0, view.w, view.h);
+        tmpCtx.restore();
+      }
       ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
 
       drawCircuits();
@@ -3392,7 +3468,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   /* ------------------------------------------------------------ tool wheel */
   function toolGlyph(id, size) {
-    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7', spray:'#56B4E9', scissors:'#E69F00', sponge:'#A0D468' }[id];
+    var c = { hand:'#e8ecf3', coin:'#F0E442', brush:'#9B93A3', chisel:'#8fe3ff', probe:'#009E73', drill:'#CC79A7', spray:'#56B4E9', scissors:'#E69F00', sponge:'#A0D468', spoon:'#BFC9D9', vacuum:'#D55E00' }[id];
     var body = {
       hand:  '<path d="M10 22V11a2 2 0 014 0v6m0-6V9a2 2 0 014 0v8m0-6a2 2 0 014 0v10a6 6 0 01-6 6h-4a6 6 0 01-6-6v-3"/>',
       coin:  '<circle cx="16" cy="16" r="9"/><circle cx="16" cy="16" r="4"/>',
@@ -3405,7 +3481,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       drill: '<path d="M8 8h12v8H8z"/><path d="M20 10h5v4h-5z"/><path d="M12 16v10"/>',
       spray: '<circle cx="16" cy="18" r="4"/><circle cx="16" cy="18" r="9" stroke-dasharray="3 4"/>' +
              '<circle cx="16" cy="18" r="13" stroke-dasharray="2 6"/>',
-      scissors: '<circle cx="9" cy="24" r="4"/><circle cx="23" cy="24" r="4"/><path d="M11 22L25 7M21 22L7 7"/>'
+      scissors: '<circle cx="9" cy="24" r="4"/><circle cx="23" cy="24" r="4"/><path d="M11 22L25 7M21 22L7 7"/>',
+      spoon: '<ellipse cx="14" cy="10" rx="7" ry="8"/><path d="M17 17L26 28"/>',
+      vacuum: '<rect x="7" y="6" width="12" height="16" rx="2"/><path d="M13 22v3a5 5 0 005 5h6"/><path d="M24 30h4"/><path d="M11 6V4h4v2"/>'
     }[id];
     return '<svg viewBox="0 0 32 32" width="' + (size || 30) + '" height="' + (size || 30) +
       '" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -3532,7 +3610,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       var itemReveal = C.REVEAL + (run.perks.wideReveal ? 0.12 : 0);
       for (var ii = 0; ii < run.layer.items.length; ii++) {
         var itTap = run.layer.items[ii];
-        if (itTap.taken || itTap.kind === 'switch' || integrityAt(itTap.x, itTap.y) > itemReveal) continue;
+        if (itTap.taken || itTap.kind === 'switch' || !isRevealedAt(itTap.x, itTap.y, itemReveal)) continue;
         var ip = toPx(itTap.x, itTap.y);
         if (DIG.dist(raw.x, raw.y, ip.x, ip.y) <= view.cell * 2.4) { collect(itTap); return; }
       }

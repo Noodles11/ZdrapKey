@@ -90,7 +90,9 @@ Obsidian, Ferrolith and reinforced plating can only be worked with specific
 tools. Quartzite is **fragile**: dig far enough and the floor gives way
 mid-layer — a scripted fall-through that costs you the layer's remaining loot
 but not the run. Chalk is soft rock, not fragile — it never collapses.
-Meteorite and Glass don't work like the rest at all — see below.
+Meteorite and Glass don't work like the rest at all — see below. Water is
+never in the rotation until you already carry a Spoon or Vacuum Cleaner — see
+Liquid surfaces below.
 
 Topsoil, Cardboard, Sand, Clay and Chalk are all **soft** ground — loose or
 crumbly enough for the Sponge to wipe away in wide strokes.
@@ -125,6 +127,8 @@ Clearing enough bugs (see Collectibles) permanently folds a sixth material,
 | Insulated Probe | 2.8 | round | ×2.0 | 8 | dead-shorts live circuits, pings nearby mines |
 | Core Drill | 3.6 | round | ×6.0 | 15 | punches anything, wakes mines early |
 | Dissolving Spray | 4.4 | gradient | ×2.1 | 1 | wide, soft-edged mist — earned, never found |
+| Spoon | 2.0 | round | ×1.3 | 1 | scoops water cup by cup, almost useless on anything solid |
+| Vacuum Cleaner | 5.5 | round | ×5.0 | 20 | drains a water layer dry in wide sweeps |
 
 Tools are found buried in layers, the same way as currency. Tap the dock button
 for a radial wheel — only tools you can actually carry this run appear on it,
@@ -191,6 +195,24 @@ The two differ only in how tough they are. **Meteorite** only yields to the
 enough — anything weaker just bounces off with a spark), and a plate takes
 two splits before a tap pops it. **Glass** gives way to any tool at all and
 pops after just one split — the same mechanic, with much less resistance.
+
+## Liquid surfaces: Water
+
+Water only ever turns up in the deep cycle for a player who already owns a
+Spoon or a Vacuum Cleaner — without one of those two tools in your permanent
+collection, a water layer simply never gets generated, so you're never stuck
+facing one you cannot touch. Every other tool barely bites it (the same
+"wrong tool" penalty obsidian or ferrolith give a tool outside their gate);
+the Spoon works it at its normal rate for a slow, steady scoop, and the
+Vacuum Cleaner — the ultimate answer to water — drains it in wide sweeps.
+
+Scooping water never opens a discrete hole the way solid crust does. Instead
+the whole layer gets more and more translucent together as the level drops,
+letting you see the seam and any loot ghosting through what's left — but none
+of it is actually reachable yet. Only once 90% of the layer's volume has been
+taken out does it finally give way all at once: the seam can reveal, mines
+arm, and buried loot becomes tappable, exactly like crust hitting its normal
+reveal threshold.
 
 ## Hazards
 
