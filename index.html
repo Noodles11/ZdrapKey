@@ -301,12 +301,14 @@
       the loop trick just doesn't work: they're a plain blade there.<br><br>
       <b>Meteorite</b> and <b>Glass</b> layers, out in the deep cycle, have no crust to scratch at all
       &mdash; just a solid shell of triangular plates, with no seams drawn between them until one actually
-      breaks off. Tap a plate to break it into four smaller ones with a gap between them; those loose pieces
-      drift and bounce off each other until a tap on one small enough pops it away for good. Swiping only
-      shoves loose pieces around &mdash; it never breaks anything. The seam turns up once the plate that
-      used to sit over it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or
-      <b>Core Drill</b> can bite into it, and a plate takes two splits before it pops. Glass gives way to
-      any tool at all, and pops after just one.<br><br>
+      breaks off. A tap breaks everything in a small radius around it, not just one plate: each whole plate
+      it catches splits into four smaller ones with a gap between them, and one of those four always shears
+      off and pops instantly, gone before it can even drift. The other three are loose and drift and bounce
+      off each other until a tap catches one small enough to pop it away for good. Swiping only shoves loose
+      pieces around &mdash; it never breaks anything. The seam turns up once the plate that used to sit over
+      it has been popped away. Meteorite is tough: only the <b>Cold Chisel</b> or <b>Core Drill</b> can bite
+      into it, and a plate takes two splits before it pops. Glass gives way to any tool at all, pops after
+      just one, and renders mostly see-through so what's behind the shell shows through it.<br><br>
       <b>Water</b> only ever appears once you already own a <b>Spoon</b> or a <b>Vacuum Cleaner</b>
       &mdash; every other tool barely bites it. Scooping it never punches a hole: the whole layer just
       grows more translucent together, letting the seam and loot ghost through, but none of it can
@@ -447,9 +449,12 @@ var DIG = (function () {
     meteorite: { id:'meteorite', name:'Meteorite',  mult:1.65, color:'#493276', grain:'#231145', fragile:false,
                  shatter:true, requires:['chisel','drill'] },
     // the same tap-apart shell as meteorite, but nowhere near as tough: any
-    // tool cracks it, and a plate pops after just one split instead of two
+    // tool cracks it, and a plate pops after just one split instead of two.
+    // transparent: renders mostly see-through instead of a solid fill, so
+    // whatever's behind the shell (the void, or a plate breaking off nearby)
+    // actually reads through the glass instead of it looking like painted rock
     glass:     { id:'glass',     name:'Glass',      mult:1.45, color:'#1F435C', grain:'#051119', fragile:false,
-                 shatter:true, shatterLevels:1 },
+                 shatter:true, shatterLevels:1, transparent:true },
     // only ever generated for a player who already carries a Spoon or a
     // Vacuum Cleaner - see the liquidUnlocked plumbing through genLayer
     water:     { id:'water',     name:'Water',      mult:0.85, color:'#3A4D78', grain:'#0D1426', fragile:false,
@@ -1833,15 +1838,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     return req.some(function (id) { return hasTool(id); });
   }
 
-  function meteorShardAt(cellPt) {
-    var shards = run.meteorShards, best = null, bestD = Infinity;
+  // a tap breaks everything within a small blast radius, not just the one
+  // plate directly under the thumb - every shard that's either close enough
+  // to the tap point or big enough that the tap still lands on its own
+  // footprint counts as hit
+  var MET_TAP_AOE_RADIUS = 5;
+  function meteorShardsNear(cellPt) {
+    var shards = run.meteorShards, hits = [];
     for (var i = 0; i < shards.length; i++) {
       var sh = shards[i], c = meteorShardCenter(sh);
       var d = DIG.dist(cellPt.x, cellPt.y, c.x, c.y);
-      var r = Math.max(MET_HIT_MIN, meteorShardRadius(sh) * MET_HIT_MULT);
-      if (d <= r && d < bestD) { bestD = d; best = sh; }
+      var ownR = Math.max(MET_HIT_MIN, meteorShardRadius(sh) * MET_HIT_MULT);
+      if (d <= Math.max(ownR, MET_TAP_AOE_RADIUS)) hits.push(sh);
     }
-    return best;
+    return hits;
   }
 
   // meteorite layers have no continuous stroke to track, so each break adds
@@ -1864,9 +1874,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var p0 = toPx(sh.cx, sh.cy);
     burst(p0, run.layer.material.grain, 10, 2);
     buzz(10);
-    meteorChildren(sh.v).forEach(function (kv) {
-      var kid = makeMeteorShard(kv, sh.level + 1);
-      var kc = meteorCentroid(kv);
+    var kids = meteorChildren(sh.v).map(function (kv) { return makeMeteorShard(kv, sh.level + 1); });
+    // one of the four fresh pieces always shears clean off and pops instantly
+    // instead of drifting - a break is never perfectly clean, so debris is
+    // lost with every single split, not just once a piece gets small enough
+    var goneIdx = Math.floor(Math.random() * kids.length);
+    kids.forEach(function (kid, ki) {
+      if (ki === goneIdx) { popMeteorShard(kid); return; }
+      var kc = meteorCentroid(kid.v);
       var ang = Math.atan2(kc.y - sh.cy, kc.x - sh.cx) || Math.random() * 6.2832;
       var sp = 0.6 + Math.random() * 0.5;
       kid.vx = Math.cos(ang) * sp; kid.vy = Math.sin(ang) * sp;
@@ -1897,10 +1912,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   function tapMeteor(cellPt) {
-    var sh = meteorShardAt(cellPt);
-    if (!sh) return;
+    var hits = meteorShardsNear(cellPt);
+    if (!hits.length) return;
     if (!canBreakMeteor()) {
-      var p = toPx(sh.cx + sh.ox, sh.cy + sh.oy);
+      var p = toPx(cellPt.x, cellPt.y);
       spark(p.x, p.y, '#9fb0e0', 2);
       if (!run.warned) {
         run.warned = true;
@@ -1909,7 +1924,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       }
       return;
     }
-    if (sh.level < shatterMaxLevel()) splitMeteorShard(sh); else popMeteorShard(sh);
+    var maxLv = shatterMaxLevel();
+    hits.forEach(function (sh) {
+      if (sh.level < maxLv) splitMeteorShard(sh); else popMeteorShard(sh);
+    });
   }
 
   // a swipe only nudges loose pieces near its path - it never splits or
@@ -2000,7 +2018,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.closePath();
     }
     ctx.fillStyle = m.color;
+    ctx.globalAlpha = m.transparent ? 0.32 : 1;
     ctx.fill();
+    ctx.globalAlpha = 1;
 
     // loose, broken-off pieces draw individually so their drift, spin and
     // padding gap all show - there's real empty space between them, not
@@ -2012,6 +2032,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(sh.rot);
+      ctx.globalAlpha = m.transparent ? 0.32 : 1;
       ctx.beginPath();
       for (k = 0; k < 3; k++) {
         var vx = (sh.v[k].x - sh.cx) * MET_PAD * cell, vy = (sh.v[k].y - sh.cy) * MET_PAD * cell;

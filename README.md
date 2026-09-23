@@ -172,13 +172,18 @@ between them; the shell reads as one continuous surface until a plate
 actually breaks off, at which point the gap it leaves is the only thing that
 shows the pieces have separated.
 
-Tap a still-solid plate and it splits into four smaller ones with a gap
-opened up between them — those four are now **loose**: they drift slowly,
-spin, and bounce off any other loose piece they touch, forever, until
-something happens to them. Tap a loose piece again and it splits the same
-way, smaller still, until it's small enough to **pop** instead — gone for
-good, with anything buried in that exact patch (a coin, a fragment, a tool)
-coming free right along with it.
+A tap breaks everything within a small blast radius around it, not just the
+one plate directly under your thumb — a single tap can split or pop several
+neighboring plates at once. Each affected plate that's still whole splits
+into four smaller ones with a gap opened up between them — one of those four
+always shears off and pops instantly on the spot, gone for good before it
+even has a chance to drift, while the other three are now **loose**: they
+drift slowly, spin, and bounce off any other loose piece they touch, forever,
+until something happens to them. Tap a loose piece again (or catch it in
+another tap's blast radius) and it splits the same way, smaller still, until
+it's small enough to **pop** outright instead — gone for good, with anything
+buried in that exact patch (a coin, a fragment, a tool) coming free right
+along with it.
 
 A **swipe** never breaks or pops anything, however hard or fast it drags
 across the field — it only shoves nearby loose pieces a little further in
@@ -195,6 +200,9 @@ The two differ only in how tough they are. **Meteorite** only yields to the
 enough — anything weaker just bounces off with a spark), and a plate takes
 two splits before a tap pops it. **Glass** gives way to any tool at all and
 pops after just one split — the same mechanic, with much less resistance.
+Glass also renders mostly transparent rather than a solid fill, so the void
+behind the shell — and any nearby plate breaking off — actually reads through
+it instead of looking like painted rock.
 
 ## Liquid surfaces: Water
 
