@@ -277,9 +277,9 @@
       crust like any other signal, only showing where you've dug. Tap one to clear it, or leave it be &mdash;
       it's not a trap either way. Clear enough of them and you'll permanently earn the
       <b>Dissolving Spray</b> and a brand-new kind of layer to dig through.<br><br>
-      <b>Sand</b> and <b>Gravel</b> obey gravity. Clear a full horizontal line all the way across
-      the layer and, half a second later, everything above it slides down to fill the gap &mdash;
-      uncovering the very top of the layer in the process.<br><br>
+      <b>Sand</b> and <b>Gravel</b> obey gravity, column by column. Open any gap with ground
+      still above it &mdash; even a single dug-out dot &mdash; and half a second later everything
+      above it in that column slides down to fill it, uncovering fresh ground at the top.<br><br>
       <b>Scissors</b> cut a thin line like any tool. On paper-like crust &mdash; Cardboard, so far &mdash;
       closing that line into a loop pops the whole inside out instantly, loot included. On anything else
       the loop trick just doesn't work: they're a plain blade there.<br><br>
@@ -386,8 +386,8 @@ var DIG = (function () {
   //             on every other material scissors are just a plain blade
   // natural   : loose, undeveloped ground bugs can burrow under
   // soft      : loose enough for the Sponge to wipe away at full effect
-  // granular  : loose enough to obey gravity - clearing a full horizontal
-  //             line brings everything above it sliding down
+  // granular  : loose enough to obey gravity, column by column - any gap
+  //             with ground still above it eventually brings that ground down
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
@@ -1453,7 +1453,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     run.detectTimer = 0;
     run.detectPulse = 0;
     run.cutPath = [];
-    run.gravityPending = false;
+    run.gravityPending = new Array(GW).fill(false);   // one flag per column
     input.hasLast = false;
     // any equipped tool that can no longer be carried at this depth drops
     // out of the combo; falls back to the bare hand if that empties it. Test
@@ -2308,42 +2308,48 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   /* ------------------------------------------------------ granular gravity */
-  // sand and gravel are loose enough that punching a clean tunnel all the way
-  // across a layer leaves nothing to hold up what's above it
+  // sand and gravel are loose enough that any hole - not just a full tunnel
+  // across the whole layer - leaves nothing to hold up what's directly above
+  // it. Every column settles completely independently, the way real grains
+  // would slip past each other rather than moving as a rigid sheet.
   var GRAVITY_CLEAR_EPS = 0.02;   // integrity at/below this counts as "gone"
-  var GRAVITY_DELAY = 0.5;        // seconds between a full line and it falling
+  var GRAVITY_DELAY = 0.5;        // seconds between a hole opening and it filling
 
-  // every fully-gone row that still has solid ground somewhere above it -
-  // the already-empty rows a previous collapse left at the very top don't
-  // count, since there's nothing left above them to fall any further
-  function findGravityRows() {
-    var rows = [], seenSolid = false, x, y;
-    for (y = 0; y < GH; y++) {
-      var full = true;
-      for (x = 0; x < GW; x++) {
-        if (run.integrity[y * GW + x] > GRAVITY_CLEAR_EPS) { full = false; break; }
-      }
-      if (!full) { seenSolid = true; continue; }
-      if (seenSolid) rows.push(y);
+  // true while this column still has solid (or partly-dug) ground with a
+  // gap open somewhere beneath it - i.e. it hasn't finished settling
+  function columnUnsettled(x) {
+    var seenGap = false;
+    for (var y = GH - 1; y >= 0; y--) {
+      if (run.integrity[y * GW + x] <= GRAVITY_CLEAR_EPS) { seenGap = true; continue; }
+      if (seenGap) return true;
     }
-    return rows;
+    return false;
   }
 
-  // drops every row that isn't itself cleared down by however many cleared
-  // rows sit beneath it, then fills in the rows that opens up at the very
-  // top - the same rule a falling-block game clears full lines with
-  function collapseGravity(rows) {
-    var next = new Float32Array(GW * GH); // starts all zero: an uncovered top
-    var isCleared = {};
-    rows.forEach(function (y) { isCleared[y] = true; });
-    for (var y = 0; y < GH; y++) {
-      if (isCleared[y]) continue;
+  // drops every non-empty cell in this one column down by however many gaps
+  // sit beneath it, leaving the space it vacates empty higher up instead -
+  // the same rule collapseGravity used to apply to a whole cleared row
+  function collapseColumn(x) {
+    var gaps = [], y, before = 0;
+    for (y = 0; y < GH; y++) before += 1 - run.integrity[y * GW + x];
+    for (y = 0; y < GH; y++) if (run.integrity[y * GW + x] <= GRAVITY_CLEAR_EPS) gaps.push(y);
+    if (!gaps.length) return false;
+    var col = new Float32Array(GH); // defaults to 0 = empty
+    for (y = 0; y < GH; y++) {
+      if (run.integrity[y * GW + x] <= GRAVITY_CLEAR_EPS) continue;
       var below = 0;
-      for (var k = 0; k < rows.length; k++) if (rows[k] > y) below++;
-      var dst = y + below;
-      for (var x = 0; x < GW; x++) next[dst * GW + x] = run.integrity[y * GW + x];
+      for (var k = 0; k < gaps.length; k++) if (gaps[k] > y) below++;
+      col[y + below] = run.integrity[y * GW + x];
     }
-    run.integrity = next;
+    var moved = false, after = 0;
+    for (y = 0; y < GH; y++) {
+      var idx = y * GW + x;
+      if (Math.abs(run.integrity[idx] - col[y]) > 1e-6) moved = true;
+      run.integrity[idx] = col[y];
+      after += 1 - col[y];
+    }
+    run.removed += after - before; // net change is ~0, but keeps the tally exact
+    return moved;
   }
 
   // mines and the seam can end up freshly exposed (or reburied) once the
@@ -2364,27 +2370,31 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     if (L.fragile && !run.collapsing && clearedFraction() >= C.FRAGILE_TRIGGER) collapse();
   }
 
-  // a full line waits half a second before it actually drops, then settles.
-  // findGravityRows() is re-run fresh at commit time (not reusing whatever
-  // triggered the wait), so any line cleared during the delay - or a second
-  // line entirely - falls in the same collapse
-  function checkGravity() {
-    if (run.gravityPending || !findGravityRows().length) return;
-    run.gravityPending = true;
+  // each column waits half a second after a gap opens beneath solid ground
+  // before it actually settles, tracked and scheduled per column so a wide
+  // dig cascades as many small, independent falls rather than one big one
+  function scheduleColumnFall(x) {
     setTimeout(function () {
-      run.gravityPending = false;
+      run.gravityPending[x] = false;
       if (phase !== 'dig' || !run.layer || !run.layer.material.granular) return;
-      var rows = findGravityRows();
-      if (!rows.length) return;
-      collapseGravity(rows);
-      run.removed = 0;
-      for (var i = 0; i < run.integrity.length; i++) run.removed += 1 - run.integrity[i];
-      shake = Math.max(shake, 8);
-      buzz(15);
-      banner(run.layer.material.name.toUpperCase() + ' SHIFTS DOWN');
+      if (!columnUnsettled(x)) return;
+      if (!collapseColumn(x)) return;
+      // a small, local sift of grain rather than a screen-wide event -
+      // this can happen dozens of times during an ordinary dig
+      var p = toPx(x + 0.5, 0);
+      spark(p.x, p.y, run.layer.material.grain, 1 + Math.random());
+      shake = Math.max(shake, 2);
       updateHud();
       recheckAfterGravity();
     }, GRAVITY_DELAY * 1000);
+  }
+
+  function checkGravity() {
+    for (var x = 0; x < GW; x++) {
+      if (run.gravityPending[x] || !columnUnsettled(x)) continue;
+      run.gravityPending[x] = true;
+      scheduleColumnFall(x);
+    }
   }
 
   function collect(it) {
