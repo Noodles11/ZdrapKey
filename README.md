@@ -31,7 +31,9 @@ A run ends in exactly one of three ways:
 
 1. **Death** — a mine or a live circuit. Forfeits every tool found this run and
    all unbanked currency.
-2. **Bail** — offered between layers. Banks currency, keeps tools and fragments.
+2. **Bail** — available any time, mid-layer or not, no more waiting for a
+   layer to clear. Banks currency, keeps tools and fragments, but a 10% toll
+   is taken out of this run's coins first as the price of leaving on demand.
 3. **The Vault** at depth 50 — banks everything plus a bonus.
 
 Currency, tools and fragment-set unlocks persist across runs. Dying never

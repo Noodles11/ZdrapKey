@@ -274,7 +274,8 @@
       Bare Hand always clears the combo; picking a real tool always drops the hand first.<br><br>
       Leftover crust you never touched is forgotten once you move on &mdash; nothing carries over unless you
       scratch a layer away completely. <b>Mines</b> and <b>live circuits</b> end the run and forfeit every tool found this run plus all unbanked
-      currency. <b>Bail</b> between layers to keep everything. Every mine hides under a red warning aura wider
+      currency. <b>Bail</b> any time, mid-layer or not, to keep everything else &mdash; but it takes a 10% toll
+      out of this run's coins first. Every mine hides under a red warning aura wider
       than the mine itself, so you'll see red before you reach the core &mdash; it shrinks the deeper you go.<br><br>
       Uncovering a <b>mine</b> arms a 5-second fuse instead of killing you outright &mdash; it pulses faster
       (and beeps faster) as time runs out. Hold your thumb exactly on it (no offset here) for 3 uninterrupted
@@ -1405,7 +1406,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     syncSkipBtn();
     $('testBadge').style.display = '';
     $('testBadge').textContent = DIG.MATERIALS[matId].name;
-    $('bailBtn').disabled = false;   // free to leave test mode at any time
   }
 
   function ownedTools() {
@@ -2806,7 +2806,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     burst(p, '#ffffff', 34, 3);
     buzz(26);
     banner(reason === 'boss' ? 'CHANNEL TRACED' : 'SEAM FOUND');
-    $('bailBtn').disabled = false;
     run.interT = 0;
     syncSkipBtn();
   }
@@ -2821,7 +2820,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     mergeLayerHeat();
     run.carry = 0;              // a skip is a shortcut, not a proper clear
     run.cleared++;
-    $('bailBtn').disabled = false;
     run.interT = 0;
   }
 
@@ -2834,8 +2832,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   }
 
   function descend() {
-    // test mode can bail between any two layers, so its bail button stays on
-    if (!run.testMode) $('bailBtn').disabled = true;
     run.depth++;
     if (!run.testMode && run.depth > C.DEPTH_CEILING) { reachVault(); return; }
     loadLayer(run.depth);
@@ -2848,8 +2844,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     endRun('vault', 'You reached the vault at depth ' + C.DEPTH_CEILING + '. Bonus +' + bonus + '.');
   }
 
+  // bailing is available the instant a run starts, mid-layer or not - the
+  // price for that freedom is a 10% toll on whatever coins this run is
+  // currently carrying, taken before the rest gets banked
+  var BAIL_TOLL_RATE = 0.10;
   function bail() {
-    endRun('bail', 'You climbed out with everything you were carrying.');
+    var toll = run.testMode ? 0 : Math.floor(run.coins * BAIL_TOLL_RATE);
+    if (toll > 0) run.coins -= toll;
+    endRun('bail', toll > 0
+      ? 'You climbed out early, paying a toll of ' + toll + ' coins.'
+      : 'You climbed out with everything you were carrying.');
   }
 
   // test mode never really ends a run: bailing just leaves the sandbox, and
@@ -3825,10 +3829,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   $('toolBtn').addEventListener('click', function () { wheelOpen ? closeWheel() : openWheel(); });
   $('wheel').addEventListener('click', closeWheel);
-  $('bailBtn').addEventListener('click', function () {
-    if ($('bailBtn').disabled) return;
-    bail();
-  });
+  $('bailBtn').addEventListener('click', function () { bail(); });
   $('skipBtn').addEventListener('click', function () {
     if ($('skipBtn').disabled) return;
     skipLayer();
@@ -4037,18 +4038,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
   $('startBtn').addEventListener('click', function () {
     unlockAudio();
     hideScreens();
-    requestAnimationFrame(function () {
-      resize(); newRun(); buildWheel();
-      $('bailBtn').disabled = true;
-    });
+    requestAnimationFrame(function () { resize(); newRun(); buildWheel(); });
   });
   $('againBtn').addEventListener('click', function () {
     unlockAudio();
     hideScreens();
-    requestAnimationFrame(function () {
-      resize(); newRun(); buildWheel();
-      $('bailBtn').disabled = true;
-    });
+    requestAnimationFrame(function () { resize(); newRun(); buildWheel(); });
   });
   $('homeBtn').addEventListener('click', function () { renderTitle(); show('scTitle'); });
   $('testModeBtn').addEventListener('click', function () { renderTestPicker(); show('scTestPick'); });
