@@ -313,6 +313,11 @@
       &mdash; every other tool barely bites it. Scooping it never punches a hole: the whole layer just
       grows more translucent together, letting the seam and loot ghost through, but none of it can
       actually be reached until 90% of the water is gone &mdash; then it all reveals at once.<br><br>
+      <b>Mirror Rift</b> digs like ordinary crust, any tool at the usual rate &mdash; but every tap or
+      swipe is echoed 180&deg; around the centre of the field at the same instant: a swipe near the top
+      going left to right comes out near the bottom going right to left. A dashed crosshair marks the
+      axis, and a ring shows where the current stroke is echoing to. Only the digging is mirrored &mdash;
+      a mine, the seam or loot exposed on the far side still needs its own direct tap.<br><br>
       The <b>Shop</b> below spends banked currency on a loadout for your <b>next run only</b> &mdash;
       skip charges, a coin multiplier, a tool rental, or (once you've defused 10 mines) a
       <b>Second Wind</b> that evades death once. Everything bought is spent the moment that run
@@ -419,6 +424,10 @@ var DIG = (function () {
   //             (see WATER_REVEAL_FRACTION); scratching it still thins it
   //             into a see-through gradient the ordinary way, so you can
   //             watch what's down there before you can actually touch it
+  // mirror    : every tap or swipe is echoed at the point 180 degrees around
+  //             the centre of the field - dig the top-left corner and the
+  //             bottom-right corner wears away too, same tool, same motion,
+  //             reversed. Ordinary crust otherwise - any tool works normally
   var MATERIALS = {
     topsoil:   { id:'topsoil',   name:'Topsoil',    mult:0.55, color:'#8E603B', grain:'#613812', fragile:false, natural:true, soft:true },
     cardboard: { id:'cardboard', name:'Cardboard',  mult:0.45, color:'#71584B', grain:'#392C26', fragile:false, paperLike:true, soft:true },
@@ -458,11 +467,16 @@ var DIG = (function () {
     // only ever generated for a player who already carries a Spoon or a
     // Vacuum Cleaner - see the liquidUnlocked plumbing through genLayer
     water:     { id:'water',     name:'Water',      mult:0.85, color:'#3A4D78', grain:'#0D1426', fragile:false,
-                 liquid:true, requires:['spoon','vacuum'] }
+                 liquid:true, requires:['spoon','vacuum'] },
+    // a normal crust in every other way - any tool bites it at the usual
+    // rate - except every stroke is mirrored 180 degrees around the field's
+    // centre point (see mirrorPoint / applyStroke)
+    mirror:    { id:'mirror',    name:'Mirror Rift', mult:1.35, color:'#7231D3', grain:'#42108E', fragile:false,
+                 mirror:true }
   };
 
   var FIXED_SEQ  = ['topsoil','cardboard','sand','clay','gravel','chalk','shale','sandstone','limestone'];
-  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite','glass'];
+  var DEEP_CYCLE = ['basalt','granite','quartzite','obsidian','ferrolith','meteorite','glass','mirror'];
   var DEEP_CYCLE_BUGS = DEEP_CYCLE.concat(['bugs']);
   // water only ever joins the rotation for a player who can already clear it
   var DEEP_CYCLE_LIQUID = DEEP_CYCLE.concat(['water']);
@@ -2102,6 +2116,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
         matCtx.stroke();
       }
       matCtx.globalAlpha = 1;
+    } else if (m.mirror) {
+      // every fleck is stamped along with its point-symmetric twin, so the
+      // crust itself already reads as reflected around the centre before a
+      // single stroke touches it
+      var mn = Math.round((w * h) / 320 / 2);
+      matCtx.fillStyle = m.grain;
+      for (var mi2 = 0; mi2 < mn; mi2++) {
+        var mx = rng() * w, my = rng() * h, ms = 1 + rng() * 3.2;
+        matCtx.globalAlpha = 0.10 + rng() * 0.22;
+        matCtx.fillRect(mx, my, ms, ms * (0.5 + rng()));
+        matCtx.fillRect(w - mx - ms, h - my - ms, ms, ms);
+      }
+      matCtx.globalAlpha = 1;
     } else {
       var n = Math.round((w * h) / 320);
       matCtx.fillStyle = m.grain;
@@ -2154,6 +2181,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
 
   /* ------------------------------------------------------------ digging */
   function idx(cx, cy) { return (cy | 0) * GW + (cx | 0); }
+  // the point 180 degrees around the field's centre - a Mirror Rift echoes
+  // every stroke here, same tool and motion, reversed in both axes at once
+  function mirrorPoint(x, y) { return { x: GW - x, y: GH - y }; }
   function integrityAt(cx, cy) {
     var x = Math.max(0, Math.min(GW - 1, cx | 0)), y = Math.max(0, Math.min(GH - 1, cy | 0));
     return run.integrity[y * GW + x];
@@ -2261,14 +2291,26 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
     var moved = 0;
     for (var i = 1; i <= steps; i++) {
       var t = i / steps;
-      moved += removeAt(a.x + dx * t, a.y + dy * t, amt, tool.radius, tool.shape, ang, L.material.granular);
+      var px = a.x + dx * t, py = a.y + dy * t;
+      moved += removeAt(px, py, amt, tool.radius, tool.shape, ang, L.material.granular);
+      // a Mirror Rift echoes the exact same stroke at the point 180 degrees
+      // around the field's centre - same tool, motion reversed in both axes
+      if (L.material.mirror) {
+        var mp = mirrorPoint(px, py);
+        moved += removeAt(mp.x, mp.y, amt, tool.radius, tool.shape, ang + Math.PI, false);
+      }
     }
     if (moved > 0.02 && Math.random() < 0.55) {
       var p = toPx(b.x, b.y);
       spark(p.x, p.y, L.material.grain, 1 + Math.random() * 2);
+      if (L.material.mirror) {
+        var mpx = toPx(GW - b.x, GH - b.y);
+        spark(mpx.x, mpx.y, L.material.grain, 1 + Math.random() * 2);
+      }
     }
     if (tool.canCut && L.material.paperLike) trackCut(b);
     if (phase === 'dig') checkWorld(b);
+    if (phase === 'dig' && L.material.mirror) checkWorld(mirrorPoint(b.x, b.y));
     if (phase === 'dig' && L.material.granular) checkGravity();
   }
 
@@ -3327,6 +3369,26 @@ if (typeof module !== 'undefined' && module.exports) module.exports = DIG;
       ctx.drawImage(tmpCv, 0, 0, view.w, view.h);
 
       drawCircuits();
+    }
+
+    // a Mirror Rift always shows its reflection axis through the centre, plus
+    // a live ring at the point the current stroke is being echoed to
+    if (run.layer.material.mirror) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,.14)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(0, view.h / 2); ctx.lineTo(view.w, view.h / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(view.w / 2, 0); ctx.lineTo(view.w / 2, view.h); ctx.stroke();
+      ctx.restore();
+      if (input.down) {
+        var cc = toCell(input.x, input.y), mc = mirrorPoint(cc.x, cc.y), mcp = toPx(mc.x, mc.y);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,.6)';
+        ctx.lineWidth = view.cell * 0.15;
+        ctx.beginPath(); ctx.arc(mcp.x, mcp.y, view.cell * activeTool().radius * 0.9, 0, 6.2832); ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // the scissors' in-progress lasso, so the player can see the loop forming

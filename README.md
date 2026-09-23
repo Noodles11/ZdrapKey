@@ -82,9 +82,9 @@ A "clear loadout" option refunds anything bought but not yet spent on a run.
 
 Depths 1–9 walk a fixed sequence, softest first: Topsoil, Cardboard, Sand, Clay,
 Gravel, Chalk, Shale, Sandstone, Limestone. After that the layers cycle Basalt →
-Granite → Quartzite → Obsidian → Ferrolith → Meteorite → Glass, getting harder
-each time around. Hardness approaches a ceiling asymptotically rather than
-growing without bound.
+Granite → Quartzite → Obsidian → Ferrolith → Meteorite → Glass → Mirror Rift,
+getting harder each time around. Hardness approaches a ceiling asymptotically
+rather than growing without bound.
 
 Obsidian, Ferrolith and reinforced plating can only be worked with specific
 tools. Quartzite is **fragile**: dig far enough and the floor gives way
@@ -92,7 +92,8 @@ mid-layer — a scripted fall-through that costs you the layer's remaining loot
 but not the run. Chalk is soft rock, not fragile — it never collapses.
 Meteorite and Glass don't work like the rest at all — see below. Water is
 never in the rotation until you already carry a Spoon or Vacuum Cleaner — see
-Liquid surfaces below.
+Liquid surfaces below. Mirror Rift digs like ordinary crust with any tool, but
+echoes every stroke — see Mirror surfaces below.
 
 Topsoil, Cardboard, Sand, Clay and Chalk are all **soft** ground — loose or
 crumbly enough for the Sponge to wipe away in wide strokes.
@@ -221,6 +222,26 @@ of it is actually reachable yet. Only once 90% of the layer's volume has been
 taken out does it finally give way all at once: the seam can reveal, mines
 arm, and buried loot becomes tappable, exactly like crust hitting its normal
 reveal threshold.
+
+## Mirror surfaces: Mirror Rift
+
+Mirror Rift is ordinary crust in every way that matters for digging — any
+tool bites it at its usual rate, nothing is gated behind a specific one. What
+makes it different is that every tap or swipe is echoed 180° around the
+field's exact centre point, at the same instant, with the same tool: a swipe
+from left to right near the top comes out as a swipe from right to left near
+the bottom, and a tap in one corner chips away the opposite corner too. A
+faint dashed crosshair marks the reflection axis for as long as you're
+digging one, and a ring shows exactly where the current stroke is echoing to.
+
+The reflection only mirrors the *digging* — a mine, the seam, or a piece of
+loot that ends up exposed on the far side arms or reveals normally (mines
+still arm and the seam still checks every frame on both the stroke's own
+point and its echo), but it still needs its own direct tap to be collected,
+defused, or cleared. Half the layer is never more than a swipe away from
+whatever you just did to the other half, so a stroke aimed only at clearing
+your side can just as easily arm a mine, or crack open a seam, clear across
+the field.
 
 ## Hazards
 
